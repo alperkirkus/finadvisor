@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets — .env.example is the template that is tracked
+.env
+
+# Cached SEC filings and price history; regenerated on first run
+data/
+
+# Node
+web/node_modules/
+web/.next/
+web/out/
+
+# Misc
+*.log
+.DS_Store
