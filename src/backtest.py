@@ -245,12 +245,12 @@ def _french_monthly(text):
 
 
 def shares_at(facts, asof):
-    """Latest share count filed by `asof`, with its period end."""
-    counts = edgar.share_counts(facts, asof)
+    """Latest share count filed by `asof`: (count, period end, filed)."""
+    counts = edgar.share_count_detail(facts, asof)
     if not counts:
-        return None, None
+        return None, None, None
     end = max(counts)
-    return counts[end], end
+    return counts[end][0], end, counts[end][1]
 
 
 def add_months(month, n):
@@ -298,12 +298,16 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
         skips["no price at as-of"] += 1
         return None
 
-    shares, shares_end = shares_at(facts, asof)
+    shares, shares_end, shares_filed = shares_at(facts, asof)
     if shares:
         # Prices are split-adjusted to today; the filed count is not.
-        for sp in payload["splits"]:
-            if sp["date"] > shares_end:
-                shares *= sp["factor"]
+        shares = edgar.to_price_basis(shares, shares_filed, payload["splits"])
+        # A ticker later reused by a different company (BB&T's BBT now
+        # belongs to a small bank) shows up as a market value no index
+        # member could have had; such dates are skipped, not scored.
+        if raw[month] * shares < _WORKER.get("min_cap", 0):
+            skips["implausible size (ticker reuse?)"] += 1
+            return None
 
     val, val_error = None, None
     rf = rf_series.get(month)
@@ -508,6 +512,7 @@ def _init_worker(start, end, universe_name="sp500"):
     _WORKER["bench"] = prices(BENCHMARK)["closes"]
     _WORKER["rf"] = risk_free_series()
     _WORKER["dates"] = quarter_ends(start, end)
+    _WORKER["min_cap"] = {"sp500": 1.5e9, "midsmall": 1.5e8}.get(universe_name, 0)
 
 
 def _score_ticker(item):

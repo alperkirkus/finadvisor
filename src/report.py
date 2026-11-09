@@ -71,6 +71,7 @@ def build(ticker, quarters=20, asof=None, facts=None, cik=None):
         "latest_metrics": latest["metrics"],
         "equity_negative": latest["notes"].get("equity_negative", False),
         "equity_thin": latest["notes"].get("equity_thin", False),
+        "debt_unknown": latest["notes"].get("debt_unknown", False),
         "scores": latest["scores"],
         "trends": trends,
         "source": "SEC EDGAR XBRL companyfacts, forms 10-K/10-Q",

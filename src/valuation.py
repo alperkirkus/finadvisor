@@ -219,10 +219,15 @@ def cost_of_capital(pkg, mcap, debt, market=None):
             "tax_rate_used": round(tax, 4), "equity_weight": round(equity_w, 3)}
 
 
-def shares_outstanding(cik):
-    """Share count from the cover page of the latest filing."""
-    counts = edgar.share_counts(edgar.companyfacts(cik))
-    return counts[max(counts)] if counts else None
+def shares_outstanding(cik, splits=None):
+    """Latest filed share count, on today's split basis when `splits` is
+    given: a split after the last filing would otherwise halve (or double)
+    the market value against a post-split quote."""
+    counts = edgar.share_count_detail(edgar.companyfacts(cik))
+    if not counts:
+        return None
+    value, filed = counts[max(counts)]
+    return edgar.to_price_basis(value, filed, splits) if splits else value
 
 
 def _dcf(fcf0, growth, wacc, years=HORIZON, terminal=TERMINAL_GROWTH):
@@ -273,7 +278,7 @@ def shares_series(cik, asof=None):
     the current count understates that year's market value by nearly half
     and inflates the premium the company appears to trade at now.
     """
-    return edgar.share_counts(edgar.companyfacts(cik), asof)
+    return edgar.share_count_detail(edgar.companyfacts(cik), asof)
 
 
 def _nearest_shares(series, when, strict=False):
@@ -337,17 +342,14 @@ def historical_multiple(pkg, shares, asof=None):
         price = series.get(month)
         if not price:
             continue
-        if asof is not None:
-            count = _nearest_shares(share_hist, date_str, strict=True)
-            if not count:
+        hit = _nearest_shares(share_hist, date_str, strict=asof is not None)
+        if hit is None:
+            if asof is not None:
                 continue
+            count = shares
         else:
-            count = _nearest_shares(share_hist, date_str) or shares
-        # Put the reported count on the same basis as the adjusted price by
-        # applying every split that happened after the period.
-        for sp in splits:
-            if sp["date"] > date_str:
-                count *= sp["factor"]
+            # On the price's split basis: only splits after that filing.
+            count = edgar.to_price_basis(hit[0], hit[1], splits)
         debt = debt_series.get(date_str, debt_now)
         enterprise = price * count + (debt or 0)
         observations.append((date_str, round(enterprise / fcf, 2)))
@@ -566,13 +568,23 @@ def value(pkg, market=None):
         shares = market["shares"]
     else:
         q = quote(company["ticker"])
-        shares = shares_outstanding(company["cik"])
+        try:
+            import backtest
+            splits = backtest.prices(company["ticker"],
+                                     max_age_days=LIVE_PRICE_MAX_AGE)["splits"]
+        except Exception:
+            splits = None
+        shares = shares_outstanding(company["cik"], splits)
     if not shares:
         raise RuntimeError("hisse sayisi bulunamadi")
 
     price = q["price"]
     mcap = price * shares
     net_debt = m.get("net_debt")
+    if pkg.get("debt_unknown") and company["sector_bucket"] != "financial":
+        # Every fair value here subtracts net debt; reading unknown debt as
+        # zero overstates the equity by exactly the missing debt.
+        raise RuntimeError("borç verisi raporlanan etiketlerden okunamadı")
     ev = mcap + net_debt if net_debt is not None else None
     capital = cost_of_capital(pkg, mcap, m.get("total_debt"), market)
     wacc = capital["wacc"]

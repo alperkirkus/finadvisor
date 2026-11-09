@@ -35,10 +35,28 @@ INSTANT = {
     "goodwill": ["Goodwill"],
     "intangibles": ["IntangibleAssetsNetExcludingGoodwill",
                     "FiniteLivedIntangibleAssetsNet"],
-    "debt_current": ["LongTermDebtCurrent", "DebtCurrent",
-                     "LongTermDebtAndCapitalLeaseObligationsCurrent"],
-    "debt_noncurrent": ["LongTermDebtNoncurrent", "LongTermDebt",
+    # Debt comes in overlapping shapes, kept apart so metrics.snapshot can
+    # add them without double counting: the current portion of long-term
+    # debt; current debt including short-term borrowings; the non-current
+    # portion; totals that already include the current portion; notes-style
+    # debt (REITs, some industrials); and short-term borrowings. Realty
+    # Income reports only NotesPayable, which the old chain lacked, so its
+    # $26B of debt read as zero.
+    "debt_current_ltd": ["LongTermDebtCurrent",
+                         "LongTermDebtAndCapitalLeaseObligationsCurrent"],
+    "debt_current_all": ["DebtCurrent"],
+    "debt_noncurrent": ["LongTermDebtNoncurrent",
                         "LongTermDebtAndCapitalLeaseObligations"],
+    "debt_total": ["LongTermDebt",
+                   "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities",
+                   "DebtAndCapitalLeaseObligations",
+                   "DebtLongtermAndShorttermCombinedAmount"],
+    "debt_notes": ["NotesPayable", "SeniorNotes", "UnsecuredDebt", "SecuredDebt",
+                   "LongTermNotesPayable", "ConvertibleNotesPayable",
+                   "ConvertibleDebtNoncurrent", "ConvertibleSeniorNotesNoncurrent",
+                   "ConvertibleDebt", "NonRecourseDebt"],
+    "debt_short": ["ShortTermBorrowings", "CommercialPaper",
+                   "OtherShortTermBorrowings"],
     "retained_earnings": ["RetainedEarningsAccumulatedDeficit"],
     "shares": ["CommonStockSharesOutstanding", "CommonStockSharesIssued"],
 }
@@ -51,9 +69,13 @@ DURATION = {
     # Banks and brokers report total net revenue as RevenuesNetOfInterestExpense
     # and tag RevenueFromContract... for fee income only, so the bank tag
     # leads; without it JPM's latest usable quarter was 2014.
+    # Total revenue before its contract-revenue subset: RevenueFromContract...
+    # excludes premiums, rent and interest, and was 3% of MetLife's revenue
+    # and 9% of American Tower's when it led the chain.
     "revenue": ["RevenuesNetOfInterestExpense",
+                "Revenues",
                 "RevenueFromContractWithCustomerExcludingAssessedTax",
-                "Revenues", "SalesRevenueNet",
+                "SalesRevenueNet",
                 "RevenueFromContractWithCustomerIncludingAssessedTax",
                 "SalesRevenueGoodsNet", "SalesRevenueServicesNet",
                 "RegulatedAndUnregulatedOperatingRevenue"],
@@ -62,8 +84,10 @@ DURATION = {
              "CostOfServicesExcludingDepreciationDepletionAndAmortization",
              "CostOfGoodsAndServicesSoldExcludingDepreciationDepletionAndAmortization"],
     "gross_profit": ["GrossProfit"],
-    "operating_income": ["OperatingIncomeLoss",
-                         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"],
+    # Operating income only. Pretax income used to stand in for it, which
+    # is EBIT less interest: it read Pfizer's interest coverage as 1.6
+    # instead of 2.6. metrics.snapshot rebuilds EBIT from pretax + interest.
+    "operating_income": ["OperatingIncomeLoss"],
     # NetIncomeLoss is profit attributable to the parent and is the right
     # numerator against StockholdersEquity. ProfitLoss (which includes
     # noncontrolling interest) only fills gaps -- Ford switched to it in 2025
@@ -73,10 +97,11 @@ DURATION = {
     "pretax_income": ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
                       "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"],
     "tax": ["IncomeTaxExpenseBenefit"],
+    # Expense tags only. The net interest tags (income minus expense) used to
+    # sit at the end of this chain; abs() in metrics then turned net interest
+    # income into an "expense" and corrupted interest coverage.
     "interest_expense": ["InterestExpense", "InterestExpenseNonoperating",
-                         "InterestAndDebtExpense", "InterestExpenseDebt",
-                         "InterestIncomeExpenseNonoperatingNet",
-                         "InterestIncomeExpenseNet"],
+                         "InterestAndDebtExpense", "InterestExpenseDebt"],
     "cfo": ["NetCashProvidedByUsedInOperatingActivities",
             "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
     # Some filers -- utilities especially -- tag capex only in their own
@@ -279,12 +304,15 @@ SHARE_CHAIN = [("dei", "EntityCommonStockSharesOutstanding"),
 SHARE_MAX_AGE_DAYS = 400
 
 
-def share_counts(facts, asof=None):
-    """{period_end: shares} from the first fresh source in SHARE_CHAIN.
+def share_count_detail(facts, asof=None):
+    """{period_end: (shares, filed)} from the first fresh source in SHARE_CHAIN.
 
-    Only 10-K/10-Q values filed by `asof` count, and a source whose latest
-    value is more than SHARE_MAX_AGE_DAYS before `asof` (today when None) is
-    skipped. Empty when no source qualifies -- never a stale count.
+    Only 10-K/10-Q values filed by `asof` count; for a period reported more
+    than once the latest filing wins (a later filing restates for splits).
+    A source whose latest value is more than SHARE_MAX_AGE_DAYS before
+    `asof` (today when None) is skipped. An isolated value more than 20x off
+    both neighbours is an XBRL scale error (thousands or millions entered as
+    units) and is dropped. Empty when no source qualifies.
     """
     from datetime import date
     ref = asof or date.today().isoformat()
@@ -292,16 +320,56 @@ def share_counts(facts, asof=None):
         node = facts["facts"].get(taxonomy, {}).get(tag)
         if not node:
             continue
-        out = {}
+        out, seen = {}, defaultdict(set)
         for e in node["units"].get("shares", []):
             if e.get("form") not in ("10-K", "10-Q") or not e.get("val"):
                 continue
-            if asof is not None and e.get("filed", "9999") > asof:
+            filed = e.get("filed", "9999")
+            if asof is not None and filed > asof:
                 continue
-            out[e["end"]] = e["val"]
+            seen[(e["end"], filed)].add(e["val"])
+            if e["end"] not in out or filed >= out[e["end"]][1]:
+                out[e["end"]] = (e["val"], filed)
+        # Multi-class filers (Visa) report one count per class for the same
+        # date; their series jumps between classes by design, so the
+        # scale-error test below would delete real values.
+        multi = any(len(v) > 1 for v in seen.values())
+        ends = [] if multi else sorted(out)
+        spikes = [cur for prev, cur, nxt in zip(ends, ends[1:], ends[2:])
+                  if (out[cur][0] > 20 * out[prev][0] and out[cur][0] > 20 * out[nxt][0])
+                  or (20 * out[cur][0] < out[prev][0] and 20 * out[cur][0] < out[nxt][0])]
+        for cur in spikes:
+            del out[cur]
         if out and _days(max(out), ref) <= SHARE_MAX_AGE_DAYS:
             return out
     return {}
+
+
+def share_counts(facts, asof=None):
+    """{period_end: shares}; see share_count_detail."""
+    return {e: v for e, (v, _) in share_count_detail(facts, asof).items()}
+
+
+def is_split(factor):
+    """A real split is a simple ratio (2, 3:2, 10, 1:10). Yahoo also logs
+    spin-offs as "splits" with factors like 2.376 (eBay/PayPal); those do
+    not change the share count and must not be applied to it."""
+    if not factor or factor <= 0:
+        return False
+    for x in (factor, 1 / factor):
+        if abs(x * 2 - round(x * 2)) < 0.02 and round(x * 2) >= 2:
+            return True
+    return False
+
+
+def to_price_basis(count, filed, splits):
+    """Puts a filed share count on the split basis of today's adjusted
+    prices: only splits after the filing date, because a filing made after
+    a split already reports post-split figures."""
+    for sp in splits:
+        if sp["date"] > filed and is_split(sp["factor"]):
+            count *= sp["factor"]
+    return count
 
 
 def net_issuance(facts, asof, splits):
@@ -313,7 +381,7 @@ def net_issuance(facts, asof, splits):
     comparison. Uses only counts filed by `asof` (today when None).
     """
     import math
-    counts = share_counts(facts, asof)
+    counts = share_count_detail(facts, asof)
     if not counts:
         return None
     now = max(counts)
@@ -321,14 +389,9 @@ def net_issuance(facts, asof, splits):
     if not earlier:
         return None
     then = max(earlier)
-
-    def adjusted(end):
-        count = counts[end]
-        for sp in splits:
-            if sp["date"] > end:
-                count *= sp["factor"]
-        return count
-    return math.log(adjusted(now) / adjusted(then))
+    a = to_price_basis(counts[now][0], counts[now][1], splits)
+    b = to_price_basis(counts[then][0], counts[then][1], splits)
+    return math.log(a / b)
 
 
 def annual_flows(facts, chain, asof=None):
@@ -355,7 +418,38 @@ def panel(facts, asof=None):
         for d, v in annual_flows(facts, chain, asof).items():
             rows[d][name + "_fy"] = v
     _bank_revenue(facts, rows, asof)
+    _carry_debt(rows)
     return dict(sorted(rows.items()))
+
+
+DEBT_KEYS = ("debt_current_ltd", "debt_current_all", "debt_noncurrent",
+             "debt_total", "debt_notes", "debt_short")
+
+
+def _carry_debt(rows):
+    """Debt that some filers tag only at fiscal year end (General Motors)
+    is carried into the following quarters, for up to 400 days, so a 10-Q
+    without the tag does not read as debt-free. `_debt_ever` marks every
+    date after the first debt observation: a company that has reported debt
+    and stops tagging it has unknown debt, not none."""
+    last, material = {}, None
+    for d in sorted(rows):
+        row = rows[d]
+        if any(k in row for k in DEBT_KEYS):
+            for k in DEBT_KEYS:
+                if k in row:
+                    last[k] = (d, row[k])
+            biggest = max(row[k] or 0 for k in DEBT_KEYS if k in row)
+            if row.get("assets") and biggest > 0.01 * row["assets"]:
+                material = d
+        elif "assets" in row:
+            for k, (when, v) in last.items():
+                if _days(when, d) <= 400:
+                    row[k] = v
+        # Debt worth more than 1% of assets reported in the last six years:
+        # if the tags then go quiet, the debt is unknown rather than zero.
+        if material and _days(material, d) <= 6 * 365:
+            row["_debt_ever"] = True
 
 
 # Regional banks such as Regions, Truist and Synchrony tag no total revenue

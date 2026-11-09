@@ -618,6 +618,11 @@ def valuation(pkg, val):
     far more robust question.
     """
     if not val:
+        if pkg.get("debt_unknown") and pkg["company"]["sector_bucket"] != "financial":
+            return {"name": "Değerleme", "score": None, "band": "borç bilinmiyor",
+                    "reasons": ["borç raporlanan etiketlerden okunamadı; borç "
+                                "bilinmeden değerleme yapılmadı"],
+                    "not_applicable": True, "debt_unknown": True}
         return {"name": "Değerleme", "score": None, "band": "veri yok",
                 "reasons": ["fiyat verisi alınamadı"]}
 
@@ -981,6 +986,13 @@ def _decide_rest(pkg, business, business_score, price, failing):
                                      "%s." % detail)
 
     by_name = {p["name"]: p for p in business}
+    if price.get("debt_unknown"):
+        return "fiyatlanamaz", ("İşletme tarafı %s (%.0f/100), ancak şirketin "
+                               "borcu raporlanan etiketlerden okunamadı. Borç "
+                               "bilinmeden hisse başına değer hesaplanırsa "
+                               "eksik borç kadar fazla çıkar, bu yüzden "
+                               "değerleme yapılmadı."
+                               % (_band(business_score), business_score))
     if price.get("not_applicable"):
         return "fiyatlanamaz", ("İşletme tarafı %s (%.0f/100), ancak serbest "
                                "nakit akışı iskontosu bu şirkete "

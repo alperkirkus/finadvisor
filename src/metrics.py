@@ -49,7 +49,7 @@ def ttm(panel, date, key, n=TTM):
     return sum(panel[d][key] for d in window)
 
 
-def snapshot(panel, date):
+def snapshot(panel, date, sec=None):
     """All ratios for one period: TTM flows over point-in-time balances."""
     r = panel[date]
     g = r.get
@@ -62,14 +62,21 @@ def snapshot(panel, date):
     tax = ttm(panel, date, "tax")
     pretax = ttm(panel, date, "pretax_income")
     interest = ttm(panel, date, "interest_expense")
+    if op is None and pretax is not None:
+        # EBIT = pretax income + interest expense. For a lender, interest is
+        # its cost of goods and pretax income is the operating line.
+        if sec == "financial":
+            op = pretax
+        elif interest is not None:
+            op = pretax + abs(interest)
     dep = ttm(panel, date, "depreciation")
 
     gross = (rev - cogs) if (rev is not None and cogs is not None) else ttm(panel, date, "gross_profit")
     fcf = (cfo - capex) if (cfo is not None and capex is not None) else None
     ebitda = (op + dep) if (op is not None and dep is not None) else None
-    debt = (g("debt_current") or 0) + (g("debt_noncurrent") or 0)
+    debt, debt_unknown = _total_debt(g, interest, rev)
     cash_eq = (g("cash") or 0) + (g("short_term_investments") or 0)
-    net_debt = debt - cash_eq
+    net_debt = debt - cash_eq if debt is not None else None
     wc = _sub(g("current_assets"), g("current_liabilities"))
     # Not every filer tags a pretax total -- some publish only the domestic
     # and foreign components, which must never be summed as if either were
@@ -78,7 +85,8 @@ def snapshot(panel, date):
     if pretax is None and ni is not None and tax is not None:
         pretax = ni + tax
     tax_rate = _div(tax, pretax)
-    invested = _add(g("equity"), debt) if g("equity") is not None else None
+    invested = (_add(g("equity"), debt)
+                if g("equity") is not None and debt is not None else None)
     nopat = op * (1 - tax_rate) if (op is not None and tax_rate is not None) else None
 
     # Sustained buybacks push book equity to zero or below at a lot of mature
@@ -118,6 +126,7 @@ def snapshot(panel, date):
         "cash_conversion": _div(cfo, ni),
     }
 
+    m["_debt_unknown"] = debt_unknown
     m["_equity_negative"] = not equity_usable
     m["_equity_thin"] = equity_thin
 
@@ -127,6 +136,42 @@ def snapshot(panel, date):
         m["net_income_growth_yoy"] = _growth(ttm(panel, prior, "net_income"), ni)
         m["fcf_growth_yoy"] = _growth(_fcf_at(panel, prior), fcf)
     return m
+
+
+def _total_debt(g, interest, revenue):
+    """(total debt, unknown flag) from the debt shapes edgar keeps apart.
+
+    A filer with no debt tag at all is either debt-free or tags its debt in
+    a way not covered here. Interest expense tells them apart: with
+    negligible interest the debt is taken as zero, with material interest it
+    is unknown -- never silently zero, which once valued a REIT carrying
+    $26B of notes as debt-free.
+    """
+    short = g("debt_short")
+    if g("debt_current_ltd") is not None:
+        current = g("debt_current_ltd") + (short or 0)
+    elif g("debt_current_all") is not None:
+        current = g("debt_current_all")          # already includes borrowings
+    else:
+        current = short
+    if g("debt_noncurrent") is not None:
+        return g("debt_noncurrent") + (current or 0), False
+    if g("debt_total") is not None:
+        return g("debt_total") + (short or 0), False   # current portion inside
+    if g("debt_notes") is not None:
+        return g("debt_notes") + (short or 0), False
+    if current is not None:
+        return current, False
+    if g("_debt_ever"):
+        return None, True       # it had debt, and the tag has gone quiet
+    # No debt tag, but most of the balance sheet funded by long-term
+    # liabilities (Ford and Paccar finance arms): debt exists, untagged.
+    noncurrent = _sub(g("liabilities"), g("current_liabilities"))
+    if noncurrent is not None and g("assets") and noncurrent > 0.35 * g("assets"):
+        return None, True
+    material = (interest is not None and abs(interest) > 0
+                and (revenue is None or abs(interest) > 0.001 * abs(revenue)))
+    return (None, True) if material else (0, False)
 
 
 def _sub(a, b):
@@ -325,7 +370,7 @@ def analyze(panel, date, sec="other"):
     sector, and genuinely missing from the filings.
     """
     na = NOT_APPLICABLE.get(sec, set())
-    raw = snapshot(panel, date)
+    raw = snapshot(panel, date, sec)
     notes = {k.lstrip("_"): raw.pop(k) for k in list(raw) if k.startswith("_")}
     # Banks and REITs run at 8-12% equity to assets by regulation and by
     # business model, so the thin-equity warning would fire on every healthy
