@@ -797,7 +797,15 @@ def fair_value_table(rows):
         methods[method] = _fair_value_bands(
             [r for r in rows if r.get("fair_value_method") == method])
     months = [r["month"] for r in rows if r.get("upside") is not None]
+    # What the average member returned in a year, averaged over dates: the
+    # yardstick a target's annualised return has to beat to be worth having.
+    by_month = defaultdict(list)
+    for r in rows:
+        if r["forward"].get(12) is not None:
+            by_month[r["month"]].append(r["forward"][12])
+    yearly = [sum(v) / len(v) for v in by_month.values() if v]
     return {"period": "%s–%s" % (min(months)[:4], max(months)[:4]) if months else None,
+            "universe_annual_return": round(sum(yearly) / len(yearly), 4) if yearly else None,
             "methods": methods}
 
 

@@ -94,13 +94,17 @@ export default function Verdict({ ticker, company, children }) {
   if (fv) {
     const last = fv.horizons[fv.horizons.length - 1];
     if (Math.abs(fv.value) < 0.10) period = { v: "Yakın", note: "fiyat zaten adil değere yakın" };
-    else if (fv.expected_years) period = {
-      v: `~${fv.expected_years} yıl`,
-      note: "benzer hedeflerin yarısı bu sürede gerçekleşti",
+    else if (fv.expected_months) period = {
+      v: `~${fv.expected_span}`,
+      note: fv.annualised != null && fv.market_annual != null
+        ? `yılda ~%${Math.round(fv.annualised * 100)}; ortalama hisse yılda ~%${Math.round(fv.market_annual * 100)}`
+        : "benzer hedeflerin yarısı bu sürede gerçekleşti",
+      tone: fv.annualised != null && fv.market_annual != null
+        ? (fv.annualised > fv.market_annual ? "good" : "critical") : null,
     };
     else if (last) period = {
-      v: `${last.years}+ yıl`,
-      note: `benzerlerinden yalnızca %${Math.round(last.hit_rate * 100)} oranında ${last.years} yılda gerçekleşti`,
+      v: `${last.span}+`,
+      note: `benzerlerinin yalnızca %${Math.round(last.hit_rate * 100)} kadarı ${last.span} içinde gerçekleşti`,
     };
   }
 
@@ -150,7 +154,7 @@ export default function Verdict({ ticker, company, children }) {
               <div className="tile">
                 <div className="label">Beklenen süre</div>
                 <div className="price">{period.v}</div>
-                <div className="micro">{period.note}</div>
+                <div className={`micro ${period.tone ? "s-" + period.tone : ""}`}>{period.note}</div>
               </div>
             </div>
           </div>

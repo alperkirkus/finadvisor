@@ -48,7 +48,11 @@ UPSIDE_BANDS = [(-9.0, -0.30, "pahalı (−%30 altı)"),
                 (-0.10, 0.10, "adil (±%10)"),
                 (0.10, 0.30, "ucuz (+%10…+%30)"),
                 (0.30, 9.0, "çok ucuz (+%30 üstü)")]
-FV_HORIZONS = (12, 24, 36)
+FV_HORIZONS = (6, 12, 24, 36)
+
+
+def _span(months):
+    return "%d ay" % months if months < 12 else "%d yıl" % (months // 12)
 
 
 def upside_band(upside):
@@ -101,19 +105,27 @@ def fair_value_read(val):
         c = cells.get(str(h))
         if not c:
             continue
-        parts.append("%d yıl: %s (evrene göre %+.1f%%)"
-                     % (h // 12, labels[h], c["mean_excess"] * 100))
-        hits.append("%d yılda %%%.0f" % (h // 12, c["hit_rate"] * 100))
-        horizons.append({"years": h // 12, "hit_rate": c["hit_rate"],
+        parts.append("%s: %s (evrene göre %+.1f%%)"
+                     % (_span(h), labels[h], c["mean_excess"] * 100))
+        hits.append("%s içinde %%%.0f" % (_span(h), c["hit_rate"] * 100))
+        horizons.append({"months": h, "span": _span(h), "hit_rate": c["hit_rate"],
                          "mean_excess": c["mean_excess"], "label": labels[h]})
     # How long such a target has taken: the first horizon by which at least
     # half of the band's targets were reached. None means most were still
     # not reached after the longest horizon measured.
-    expected = next((x["years"] for x in horizons if x["hit_rate"] >= 0.5), None)
+    expected = next((x["months"] for x in horizons if x["hit_rate"] >= 0.5), None)
+    # A target is only worth waiting for if its yearly pace beats what an
+    # ordinary member of the index returned in a year.
+    annualised = (round((1 + upside) ** (12 / expected) - 1, 4)
+                  if expected and upside > 0 else None)
     return {"key": "fair_value", "name": "Adil değer hedefi", "value": upside,
             "method": method, "band": band, "horizons": horizons,
-            "expected_years": expected, "price": pvf["price"], "fair": pvf["fair"],
-            "state": "3 yıl: %s" % final, "tone": tone,
+            "expected_months": expected,
+            "expected_span": _span(expected) if expected else None,
+            "annualised": annualised,
+            "market_annual": table.get("universe_annual_return"),
+            "price": pvf["price"], "fair": pvf["fair"],
+            "state": "%s: %s" % (_span(FV_HORIZONS[-1]), final), "tone": tone,
             "reading": ("Fiyat %.2f, adil değer %.2f (%s). Geçmişte bu bantta "
                         "%s." % (pvf["price"], pvf["fair"], band, "; ".join(parts))),
             "evidence": ("Backtest (S&P 500, %s, %s): bu banttaki hedeflere "
@@ -835,25 +847,35 @@ def plain_summary(pkg, val, label, business_score, signals):
         horizons = fv["horizons"]
         if horizons and abs(up) >= 0.10:
             last = horizons[-1]
-            if fv["expected_years"]:
+            if fv["expected_months"]:
                 out.append("Geçmişte bu kadar %s görünen hisselerin yarısının "
-                           "fiyatı yaklaşık %d yıl içinde adil değere ulaştı."
-                           % (look, fv["expected_years"]))
+                           "fiyatı yaklaşık %s içinde adil değere ulaştı."
+                           % (look, fv["expected_span"]))
+                if fv.get("annualised") is not None and fv.get("market_annual") is not None:
+                    beat = fv["annualised"] > fv["market_annual"]
+                    out.append("Bu, yılda yaklaşık %%%.0f getiri demek; aynı dönemde "
+                               "ortalama hisse yılda %%%.0f kazandırdı, yani hedef "
+                               "tek başına %s."
+                               % (fv["annualised"] * 100, fv["market_annual"] * 100,
+                                  "ortalamanın üstünde" if beat
+                                  else "ortalama bir hisseden daha cazip değil"))
             else:
-                out.append("Geçmişte bu kadar %s görünen hisselerin fiyatı %d "
-                           "yılda bile çoğunlukla adil değere %s (oran: %%%.0f)."
-                           % (look, last["years"],
+                out.append("Geçmişte bu kadar %s görünen hisselerin fiyatı %s "
+                           "içinde bile çoğunlukla adil değere %s (oran: %%%.0f)."
+                           % (look, last["span"],
                               "çıkmadı" if up > 0 else "inmedi",
                               last["hit_rate"] * 100))
-            out.append({"olumlu": "Bu hisseler sonraki %d yılda piyasa "
+            short = next((x for x in horizons if x["label"] != "belirsiz"), None)
+            pick = short or last
+            out.append({"olumlu": "Bu hisseler sonraki %s içinde piyasa "
                                   "ortalamasından anlamlı biçimde iyi gitti.",
-                        "olumsuz": "Bu hisseler sonraki %d yılda piyasa "
+                        "olumsuz": "Bu hisseler sonraki %s içinde piyasa "
                                    "ortalamasının anlamlı biçimde gerisinde kaldı.",
-                        "belirsiz": "Bu hisselerin sonraki %d yılı piyasa "
+                        "belirsiz": "Bu hisselerin sonraki %s piyasa "
                                     "ortalamasından belirgin biçimde farklı "
-                                    "olmadı; fiyat hedefi tek başına al-sat "
-                                    "sinyali sayılmamalı."}[last["label"]]
-                       % last["years"])
+                                    "geçmedi; fiyat hedefi tek başına al-sat "
+                                    "sinyali sayılmamalı."}[pick["label"]]
+                       % pick["span"])
     risk = by_key.get("fall_risk")
     if risk:
         out.append("Büyük düşüş riski %s: son bir yılın oynaklığı %s."
