@@ -277,7 +277,11 @@ NOT_APPLICABLE = {
                   "net_debt_to_ebitda", "interest_coverage", "roic",
                   "asset_turnover", "working_capital", "ebitda_ttm",
                   "fcf_ttm", "fcf_margin", "fcf_growth_yoy",
-                  "altman_z", "piotroski", "beneish_m"},
+                  "altman_z", "piotroski", "beneish_m",
+                  # The same cash-flow swings make accruals and cash
+                  # conversion noise for a bank: JPM's CFO / net income
+                  # reads -2.5 in a normal year.
+                  "accrual_ratio", "cash_conversion"},
     "real_estate": {"gross_margin", "altman_z", "beneish_m"},
     "utility": {"gross_margin"},
     "energy": set(),

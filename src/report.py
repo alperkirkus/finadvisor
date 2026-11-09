@@ -38,6 +38,12 @@ def build(ticker, quarters=20, asof=None, facts=None, cik=None):
         # catch Exception, and SystemExit slips past that and kills the run.
         raise ValueError("%s: kullanilabilir donem yok" % ticker)
     latest = hist[-1]
+    # The latest period with both a balance sheet and revenue can trail the
+    # latest balance sheet by years when a filer changes its revenue tag;
+    # the package then describes the past as if it were current. The lag is
+    # carried so the verdict can refuse to read a stale package.
+    balance_dates = [d for d in panel if "assets" in panel[d]]
+    latest_balance = max(balance_dates) if balance_dates else latest["date"]
 
     trends = {}
     for k in TREND_KEYS:
@@ -55,6 +61,8 @@ def build(ticker, quarters=20, asof=None, facts=None, cik=None):
                     "sic": prof["sic"], "industry": prof["industry"],
                     "sector_bucket": sec},
         "as_of": latest["date"],
+        "latest_balance_date": latest_balance,
+        "stale_days": edgar._days(latest["date"], latest_balance),
         "knowledge_cutoff": asof,
         "periods_available": len(panel),
         "data_coverage": latest["coverage"],

@@ -286,6 +286,9 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
     if pkg["periods_available"] < 12 or pkg["data_coverage"] < 0.75:
         skips["thin data"] += 1
         return None
+    if pkg["stale_days"] > VD.STALE_DAYS:
+        skips["stale package"] += 1
+        return None
 
     month = asof[:7]
     closes, raw = payload["closes"], payload.get("raw") or {}
@@ -361,6 +364,10 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "momentum": momentum,
             "earnings_yield": earnings_yield,
             "upside": (val or {}).get("upside_to_fair"),
+            "fair_value_method": ("bank" if (val or {}).get("bank") else
+                                  "reversion" if (val or {}).get("reversion") else
+                                  "dcf" if (val or {}).get("upside_to_fair") is not None
+                                  else None),
             "revenue_growth": m.get("revenue_growth_yoy"),
             "fcf_margin_trend": (pkg["trends"].get("fcf_margin") or {}).get("direction"),
             "revenue_trend": (pkg["trends"].get("revenue_ttm") or {}).get("direction"),
@@ -773,13 +780,25 @@ def crash_stats(rows, key, seg, h=HOLD_MONTHS):
 
 
 def fair_value_table(rows):
-    """Outcomes after each fair-value upside band, at 1, 2 and 3 years.
+    """Outcomes after each fair-value upside band, at 1, 2 and 3 years, per
+    valuation method -- the bank P/B model and the cash-flow reversion model
+    behave too differently to share one record.
 
     Descriptive base rates for the product, so every as-of date with a
     complete forward window is used (2013 onward, including the 2020+
     window the v2 holdout test already opened). Hit rate: the price moved at
     least as far as the target implied, in the target's direction.
     """
+    methods = {}
+    for method in ("bank", "reversion"):
+        methods[method] = _fair_value_bands(
+            [r for r in rows if r.get("fair_value_method") == method])
+    months = [r["month"] for r in rows if r.get("upside") is not None]
+    return {"period": "%s–%s" % (min(months)[:4], max(months)[:4]) if months else None,
+            "methods": methods}
+
+
+def _fair_value_bands(rows):
     out = {}
     for lo, hi, name in VD.UPSIDE_BANDS:
         cells = {}
@@ -802,9 +821,7 @@ def fair_value_table(rows):
                              "t": round(nw["t"], 2) if nw and nw["t"] is not None else None,
                              "median_return": round(raw[len(raw) // 2], 4)}
         out[name] = cells
-    months = [r["month"] for r in rows if r.get("upside") is not None]
-    return {"period": "%s–%s" % (min(months)[:4], max(months)[:4]) if months else None,
-            "bands": out}
+    return out
 
 
 def crash_table(rows, h=HOLD_MONTHS):

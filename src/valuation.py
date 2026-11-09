@@ -370,6 +370,50 @@ def _add_month(month, n):
     return "%04d-%02d" % (year, (mon - 1) % 12 + 1)
 
 
+def justified_pb(pkg, capital, shares, net_income):
+    """Bank fair value from the justified price-to-book multiple.
+
+    P/B = (ROE - g) / (Ke - g): a bank is worth more than its book only to
+    the extent its return on equity exceeds what shareholders require
+    (Damodaran, Investment Valuation ch. 21; the residual-income identity in
+    Penman). Free cash flow, the basis for everything else here, is
+    meaningless for a lender. ROE is the median of the available history,
+    the sustainable rate rather than one good year; Ke is the CAPM cost of
+    equity, not a WACC, because deposits are a bank's raw material, not its
+    financing.
+    """
+    m = pkg["latest_metrics"]
+    roe_now = m.get("roe")
+    ke = capital.get("cost_of_equity")
+    if not roe_now or roe_now <= 0 or not net_income or not ke or not shares:
+        return None
+    book = net_income / roe_now
+    series = sorted(v for _, v in (pkg["trends"].get("roe") or {}).get("series") or []
+                    if v is not None)
+    if len(series) < 8:
+        return None
+    roe = series[len(series) // 2]
+    g = TERMINAL_GROWTH
+
+    def per_share(rate):
+        if rate <= g:
+            return None
+        return round(max(roe - g, 0) / (rate - g) * book / shares, 2)
+
+    fair = per_share(ke)
+    if not fair:
+        return None
+    return {"fair": fair, "low": per_share(ke + 0.01), "high": per_share(ke - 0.01),
+            "roe_used": round(roe, 4), "roe_now": round(roe_now, 4),
+            "cost_of_equity": round(ke, 4), "growth": g,
+            "book_per_share": round(book / shares, 2),
+            "justified_pb": round(max(roe - g, 0) / (ke - g), 2),
+            "basis": ("gerekçeli F/DD %.2f× = (medyan ROE %.1f%% − g %.1f%%) / "
+                      "(Ke %.1f%% − g) × defter değeri %.2f"
+                      % (max(roe - g, 0) / (ke - g), roe * 100, g * 100,
+                         ke * 100, book / shares))}
+
+
 def _month_after(date_str):
     year, month, _ = (int(x) for x in date_str.split("-"))
     month += 1
@@ -572,8 +616,14 @@ def value(pkg, market=None):
     except Exception:
         volatility = None
 
+    bank = None
+    if company["sector_bucket"] == "financial":
+        bank = justified_pb(pkg, capital, shares, net_income=ni)
+
     fair = _fair_range(dcf)
     headline = reversion["fair"] if reversion else base_value
+    if bank:
+        headline = bank["fair"]
     if fair and base_value is not None:
         fair["base"] = base_value
         fair["basis"] = ("sermaye maliyeti %.2f%%, normalize nakit akışı, "
@@ -602,7 +652,12 @@ def value(pkg, market=None):
         "sensitivity": sensitivity,
         "reversion": reversion,
         "dcf_fair_value": fair,
-        "fair_value": ({"base": reversion["fair"], "low": reversion["low"],
+        "bank": bank,
+        "fair_value": ({"base": bank["fair"], "low": bank["low"],
+                        "high": bank["high"], "basis": bank["basis"],
+                        "method": "gerekçeli F/DD (ROE - g) / (Ke - g)"}
+                       if bank else
+                       {"base": reversion["fair"], "low": reversion["low"],
                         "high": reversion["high"], "basis": reversion["basis"],
                         "method": "tarihsel çarpana dönüş"}
                        if reversion else fair),

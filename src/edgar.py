@@ -48,7 +48,11 @@ DURATION = {
     # RevenueFromContractWithCustomer tags in 2018; before that many used
     # SalesRevenueGoodsNet, and regulated utilities still use their own
     # sector tag. Without these, whole years of history simply vanish.
-    "revenue": ["RevenueFromContractWithCustomerExcludingAssessedTax",
+    # Banks and brokers report total net revenue as RevenuesNetOfInterestExpense
+    # and tag RevenueFromContract... for fee income only, so the bank tag
+    # leads; without it JPM's latest usable quarter was 2014.
+    "revenue": ["RevenuesNetOfInterestExpense",
+                "RevenueFromContractWithCustomerExcludingAssessedTax",
                 "Revenues", "SalesRevenueNet",
                 "RevenueFromContractWithCustomerIncludingAssessedTax",
                 "SalesRevenueGoodsNet", "SalesRevenueServicesNet",
