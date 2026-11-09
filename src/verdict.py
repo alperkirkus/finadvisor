@@ -40,12 +40,11 @@ def measured_signals(pkg):
     """The signals this project has actually measured, reported separately.
 
     The composite verdict is a framework read; its rank correlation with
-    forward returns is approximately zero. One input is different: the
-    accrual ratio both replicates a long-established published effect and
-    came out as the strongest signal in this project's own backtest. It is
-    surfaced on its own, with its measured statistics attached, rather than
-    diluted into a score -- so the reader can see which part of the output
-    has evidence behind it and which part is framework judgment.
+    forward returns is approximately zero. The accrual ratio is surfaced on
+    its own because it is the best-documented single input in the
+    literature, with this project's own measured statistics attached --
+    including when they fall short of significance, so the reader can see
+    how much evidence actually sits behind it.
     """
     out = []
     accrual = pkg["latest_metrics"].get("accrual_ratio")
@@ -69,12 +68,16 @@ def measured_signals(pkg):
         stat = _backtest_stat("Tahakkuk < -%6")
         in_cohort = accrual < -0.06
         if stat:
-            evidence = ("Ölçülen eşik: −%%6 altındaki kohort, backtest'te evreni "
-                        "%+.2f puan geçti — kazanma oranı %%%.0f, t=%+.2f, n=%d. "
-                        "Bu şirket %s. Sloan (1996) etkisiyle tutarlı."
+            significant = abs(stat["t_stat"]) >= 2
+            evidence = ("Ölçülen eşik: −%%6 altındaki kohort, backtest'te evrene "
+                        "göre %+.2f puan — kazanma oranı %%%.0f, t=%+.2f, n=%d. "
+                        "Bu şirket %s. %s"
                         % (stat["vs_universe"] * 100, stat["win_rate"] * 100,
                            stat["t_stat"], stat["n"],
-                           "o kohortta" if in_cohort else "o kohortta değil"))
+                           "o kohortta" if in_cohort else "o kohortta değil",
+                           "Sloan (1996) etkisiyle tutarlı." if significant else
+                           "Fark istatistiksel olarak anlamlı değil; yalnızca "
+                           "yönü Sloan (1996) ile tutarlı."))
         else:
             evidence = ("Sloan (1996): tahakkukları yüksek şirketler sonraki "
                         "dönemde sistematik olarak düşük performans gösterir.")
@@ -119,7 +122,7 @@ WEIGHTS = {
     # The accrual ratio carries the most weight of any single input in the
     # whole model: it replicates a long-established published effect (Sloan
     # 1996) and carries the expected sign in this project's own backtest,
-    # though not after factor controls. Beneish is held down for its high false-positive rate.
+    # though not at significance among large caps. Beneish is held down for its high false-positive rate.
     "earnings_quality": {
         "accrual_ratio": 0.50,
         "cash_conversion": 0.35,
@@ -536,9 +539,9 @@ def assess(pkg, val=None):
         "basis": "Bu sonuc, knowledge/analysis-framework.md icindeki acikca "
                  "tanimli kriterlere gore mali durumun yapilandirilmis bir "
                  "okumasidir; getiri tahmini degildir. Bilesik skorun ileri "
-                 "getiriyle olculmus siralama gucu yoktur; gelistirme "
-                 "doneminde yonu negatiftir ve bu buyuk olcude bilinen "
-                 "faktor egilimlerinden gelir. Tahakkuk orani 'olculmus "
+                 "getiriyle olculmus siralama gucu yoktur (S&P 500 "
+                 "uyeleri uzerinde IC +0.01); skor yalnizca karlilik "
+                 "faktorune egilim tasir. Tahakkuk orani 'olculmus "
                  "sinyaller' bolumunde ayrica gosterilir.",
         "disclaimer": "Bu bir analiz araci ciktisidir. Yatirim danismanligi, "
                       "alim-satim tavsiyesi veya hedef fiyat degildir. "
@@ -567,9 +570,9 @@ def _decide(pkg, business, business_score, price):
     if business_score is None:
         return "degerlendirilemez", "İşletme kalitesi hesaplanamadı."
 
-    # The accrual gate. This is the one input with measured predictive
-    # evidence behind it (the expected sign in this project's backtest, replicating
-    # Sloan 1996), and diluting it into a pillar average lets a company with
+    # The accrual gate. This is the best-documented earnings-quality input
+    # (Sloan 1996; its sign holds in this project's backtest, its size does
+    # not reach significance among large caps), and diluting it into a pillar average lets a company with
     # profits that are visibly not turning into cash pass on the strength of
     # its balance sheet. When the accrual ratio is above the framework's
     # warning level *and* cash conversion confirms it, that is decisive on

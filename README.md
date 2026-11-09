@@ -13,24 +13,23 @@ key.
 
 ## What this is not
 
-**The verdict has no measured predictive power, and the screen's score
-leans the wrong way.** The project's own point-in-time backtest (51
-companies, 2013-2019 development window, lookahead and restatement bias
-removed by construction) scores exactly the number the screen orders by and
-finds a *negative* cross-sectional rank correlation with 12-month forward
-returns (mean IC **−0.12**, Newey-West t = −3.3). Most of it is factor
-exposure rather than skill: the score loads on profitability and *against*
-momentum, and its alpha after Fama-French five factors plus momentum is not
-significant. The accrual ratio points the way Sloan (1996) predicts
-(lower accruals, higher returns), but after the same factor controls that
-too stops being significant here.
+**The verdict has no measured predictive power.** The project's own
+point-in-time backtest scores exactly the number the screen orders by, on
+every S&P 500 member of the day that can still be resolved (about 316 names
+per date, 2013-2019 development window, lookahead and restatement bias
+removed by construction). Its cross-sectional rank correlation with
+12-month forward returns is **+0.01** (t = 0.6) against a smallest
+detectable effect of 0.06 — none. After Fama-French five factors plus
+momentum its alpha is exactly zero; what it does carry is a profitability
+tilt. No single input does better: the accrual ratio points the way Sloan
+(1996) predicts but is not significant, and Piotroski's F-Score leans
+slightly the wrong way.
 
 So this is a structured, inspectable read of financial condition against
 criteria that are written down — not a return forecast, not investment
 advice, and not a target price. The thresholds are deliberately **not** tuned
-to the backtest: with about 42 survivorship-biased names per date and a
-single market regime, the smallest effect the test can detect is an IC of
-0.10, and tuning against it would be overfitting rather than calibration. Every weight in `verdict.py` carries its justification inline,
+to the backtest: there is no signal to tune toward, and fitting weights to
+noise in one market regime would be overfitting rather than calibration. Every weight in `verdict.py` carries its justification inline,
 so you can disagree with a specific one rather than with a black box.
 
 Read `knowledge/analysis-framework.md` for the criteria and, more usefully,
@@ -73,7 +72,12 @@ whatever filings are already cached (52 companies), not all 10,412 filers —
 scoring one needs a live quote and a beta regression, so the screen is built
 offline by `ranking.py` and served from a file.
 
-`backtest.py` measures whether the signal predicts anything. It rebuilds
+`backtest.py` measures whether the signal predicts anything. The universe
+is the S&P 500 as it stood on each date: membership intervals come from the
+public historical-components dataset (github.com/fja05680/sp500), and a name
+is scored only while it was in the index, so companies that rose into it
+later are not scored on dates before they qualified. `universe.py` resolves
+the members to CIKs and prefetches their filings and prices. It rebuilds
 each company's package as it stood on a past date with the product's own
 builder — `report.build(..., asof=)` only reads filings published by then,
 which removes lookahead and restatement bias together — values it with that
@@ -104,39 +108,43 @@ quarter of the quality pillar, since durability is most of what quality means
 once the level is known. And the **accrual gate** is decisive rather than
 diluted: when the accrual ratio is above the framework's warning level *and*
 cash conversion confirms it, the verdict is blocked whatever the other
-pillars say. One weak reading is noise; both together is the only signal in
-this model with measured evidence behind it.
+pillars say. One weak reading is noise; both together is the pattern the
+accounting literature ties to later earnings disappointments, although this
+project's own backtest finds the accrual effect too weak to measure among
+large caps.
 
 Component weights inside each pillar come from how reliable each measure is
 known to be, documented next to the weight in `verdict.py` — not fitted to
 the backtest, which cannot support a fitted weight. The accrual ratio carries
-the largest single share for the one reason that survives scrutiny: it
-replicates a published effect and was the strongest signal in this project's
-own test. Piotroski is reported but no longer weighted, because its prior and
-its measurement agree that it does not discriminate here.
+the largest single share because it is the best-documented earnings-quality
+measure in the literature, not because this project measured it working.
+Piotroski is reported but no longer weighted, because its prior and its
+measurement agree that it does not discriminate among large companies.
 
 **The backtest finding is negative and worth stating plainly.** On the
-development window (24 quarterly dates, about 42 names each) the screen's
-score ranks 12-month returns the wrong way: mean IC −0.12 (t = −3.3), top
-quintile 4.5pp behind the bottom. The sign holds at shorter horizons but
-weakens (−0.06 at one and three months). The factor regression explains
-much of it — loadings of +0.43 on profitability (RMW) and −0.31 on momentum —
-and leaves an alpha of −0.40% a month at t = −1.4, not significant. The
-valuation pillar is the likely source of the momentum tilt: "cheap against
-its own history" mostly selects stocks that have recently fallen, and its
-own IC is negative (−0.08).
+development window (24 quarterly dates, about 316 names each) the screen's
+score has a mean 12-month IC of +0.013 (t = 0.6), and its top quintile beats
+the bottom by 0.8pp (t = 0.6). The smallest IC this sample can detect at 80%
+power is 0.059, so the result is a measured absence, not an unmeasured one.
+Regressed on Fama-French five factors plus momentum, the monthly long-short
+return has an alpha of 0.00% (t = 0.0) and a profitability (RMW) loading of
++0.47: the score picks profitable companies and nothing beyond what that
+factor already pays. No pillar reaches significance.
 
-The accrual ratio carries the expected sign (IC −0.10 at six months,
-t = −3.6, and the below-−6% cohort beats the universe in the pooled legacy
-test), but its long-short return loads on the investment (CMA) and value
-(HML) factors and has no significant alpha after them. F-Score shows no
-ranking power on the development window (IC ≈ 0.01), consistent with its
-documented weakness among large caps. The verdict is therefore presented as
-a structured read of financial condition against stated criteria, not as a
-return forecast, and the thresholds are deliberately *not* tuned to this
-data. The universe is also survivorship-biased (WBA, delisted in 2025, no
-longer resolves at all), which inflates absolute returns; comparisons
-between names on the same date are less affected.
+An earlier run on a fixed list of 51 mega caps found the score ranking
+returns the wrong way (IC −0.12, t = −3.3) and an accrual effect at
+t = +4.2. Neither survives on the broader universe; both were small-sample
+artifacts, which is the reason for testing on the index rather than a hand
+list. On the broad universe the accrual ratio keeps the expected sign
+(IC −0.03, alpha −0.30% a month, t = −1.5) and F-Score leans slightly the
+wrong way (IC −0.03, t = −2.2), in line with its documented weakness among
+large caps.
+
+Survivorship is reduced, not removed. About 75% of each date's members are
+scored; most of the rest are companies later acquired or delisted, which
+have neither a CIK in the SEC ticker map nor a free price history any more.
+That inflates absolute returns; comparisons between names on the same date
+are less affected. `--universe legacy` reruns the original 51-name list.
 
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal
