@@ -483,6 +483,7 @@ def justified_pb(pkg, capital, shares, net_income):
     if not fair:
         return None
     return {"fair": fair, "low": per_share(ke + 0.01), "high": per_share(ke - 0.01),
+            "sic": pkg["company"].get("sic"),
             "roe_used": round(roe, 4), "roe_now": round(roe_now, 4),
             "cost_of_equity": round(ke, 4), "growth": g,
             "book_per_share": round(book / shares, 2),

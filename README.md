@@ -262,6 +262,14 @@ no edge there either. `--universe midsmall` reproduces the run; research
 universes write `backtest_summary_<universe>.json` so they never change the
 S&P 500 evidence the verdict cites.
 
+**Forward tracking.** With the holdout spent, the only clean test left is
+the future. `tracking.py snapshot` freezes the current screen with its
+prices into `tracking/` (kept in the repository, because a snapshot cannot
+be regenerated); `tracking.py report` reprices every snapshot and compares
+each verdict group and the top ten with that snapshot's average name and
+with the S&P 500. One snapshot a month is the intended rhythm; differences
+mean little before six to twelve months.
+
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal
 year, the balance sheet identity, sign conventions and period continuity

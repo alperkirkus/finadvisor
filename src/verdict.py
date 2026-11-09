@@ -76,6 +76,30 @@ def _horizon_label(cell):
     return "belirsiz"
 
 
+# How the justified P/B ranked returns within each kind of financial firm
+# (valuation-pillar IC, 12 months, S&P 500 + S&P 400/600 members, measured
+# November 2026). The pooled financial result holds in both windows; the
+# sub-groups do not all hold on their own, and the reader should know which.
+BANK_SUBGROUP_NOTES = [
+    ((6000, 6199), "Bankalarda: 2013-2019 IC +0.06 (anlamsız), 2020-2025 +0.12 (t 3.5)."),
+    ((6200, 6299), "Aracı kurum ve varlık yöneticilerinde: 2013-2019 IC 0.00, "
+                   "2020-2025 +0.08 (anlamsız) -- bu grupta kanıt zayıf."),
+    ((6300, 6499), "Sigortacılarda: 2013-2019 IC +0.13 (t 2.2), ama 2020-2025'te "
+                   "+0.04 (anlamsız) -- yöntem sigortacılarda son dönemde zayıfladı."),
+]
+
+
+def _bank_subgroup_note(sic):
+    try:
+        s = int(sic)
+    except (TypeError, ValueError):
+        return ""
+    for (lo, hi), note in BANK_SUBGROUP_NOTES:
+        if lo <= s <= hi:
+            return " " + note
+    return " Bu alt grupta ayrı ölçüm yok."
+
+
 def fair_value_read(val):
     """What happened, historically, after the system gave a target like this one.
 
@@ -135,9 +159,10 @@ def fair_value_read(val):
                             if method == "bank" else "tarihsel çarpan yöntemi",
                             ", ".join(hits), cells[str(FV_HORIZONS[0])]["n"],
                             "Finansal şirketlerde bu yöntemin ucuz bulduğu "
-                            "isimler iki dönemde de evrenin önünde gitti; "
-                            "2023'te batan bankalar veride olmadığı için son "
-                            "dönem iyimser olabilir."
+                            "isimler toplamda iki dönemde de evrenin önünde "
+                            "gitti; 2023'te batan bankalar veride olmadığı "
+                            "için son dönem iyimser olabilir."
+                            + _bank_subgroup_note((val.get("bank") or {}).get("sic"))
                             if method == "bank" else
                             "Adil değer şirketin kendi geçmiş çarpanından "
                             "türetilir ve ileriye dönük bilgi içermez -- "
