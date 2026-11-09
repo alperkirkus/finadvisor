@@ -232,6 +232,17 @@ reversion and the value-driver estimate is only reported alongside it
 describe a lender far better than a steady-state profit formula describes a
 company whose value sits in intangibles and growth.
 
+Insider buying was the last candidate for the value-trap problem: the one
+forward-looking fact in the public record. `insider.py` reads the SEC Form
+3/4/5 data sets (2012 onward, about 330,000 open-market trades by officers
+and directors of the backtest universe) and counts a trade only once it was
+filed. Against criteria written beforehand it failed: the 12-month IC of
+the number of insider buyers is +0.009 (t = 0.5) in 2013-2019, and cheap
+names with insider buyers beat cheap names without them by 6.9pp over two
+years in 2013-2019 but trailed them by 1.4pp in 2020-2025. The later window
+alone looks better (IC +0.047, t = 2.5), which is exactly the kind of result
+the development/holdout split exists to keep out of the product.
+
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal
 year, the balance sheet identity, sign conventions and period continuity

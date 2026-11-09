@@ -42,6 +42,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
 import edgar
+import insider
 import report
 import universe as U
 import valuation as V
@@ -83,7 +84,8 @@ SIGNALS = ["overall", "business_score", "quality", "safety",
            "fcf_yield", "roic",
            "gross_profitability", "asset_growth", "net_issuance", "momentum",
            "earnings_yield", "multifactor", "sue", "revenue_surprise",
-           "volatility", "upside", "dcf_upside", "vd_upside"]
+           "volatility", "upside", "dcf_upside", "vd_upside",
+           "insider_buyers_6m", "insider_npr_12m"]
 
 # Candidate signals from the literature, each with the sign its source
 # predicts. The composite averages their within-sector percentiles with
@@ -374,10 +376,18 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "dcf_upside": (val or {}).get("dcf_upside"),
             "vd_upside": (round(val["value_driver"]["fair"] / raw[month] - 1, 4)
                           if (val or {}).get("value_driver") else None),
+            **_insider(cik, asof),
             "sue": _surprise(facts, asof, "eps_diluted"),
             "revenue_surprise": _surprise(facts, asof, "revenue"),
             "forward": forward,
             "benchmark_forward": bench_forward}
+
+
+def _insider(cik, asof):
+    trades = _WORKER.get("insider")
+    if trades is None or cik is None:
+        return {"insider_buyers_6m": None, "insider_npr_12m": None}
+    return insider.signal(trades.get(str(cik)), asof)
 
 
 def _days_between(a, b):
@@ -504,7 +514,14 @@ def legacy_universe():
 _WORKER = {}
 
 
+INSIDER_TRADES = os.path.join(DATA, "insider", "trades_sp500.json")
+
+
 def _init_worker(start, end):
+    # Insider trades are optional input: without the file the two insider
+    # columns stay None rather than reading as "no insider bought".
+    _WORKER["insider"] = (json.load(open(INSIDER_TRADES))
+                          if os.path.exists(INSIDER_TRADES) else None)
     _WORKER["bench"] = prices(BENCHMARK)["closes"]
     _WORKER["rf"] = risk_free_series()
     _WORKER["dates"] = quarter_ends(start, end)
