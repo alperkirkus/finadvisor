@@ -13,20 +13,24 @@ key.
 
 ## What this is not
 
-**The verdict has no measured predictive power.** The project's own
-point-in-time backtest (51 companies, 2013-2025, lookahead and restatement
-bias removed by construction) puts the composite score's rank correlation
-with forward returns at **+0.009** — that is, none. One input does carry
-evidence: the accrual ratio replicates the Sloan (1996) effect at t = +4.24.
-Piotroski's F-Score comes out *inverted* in this large-cap universe, which is
-what its own calibration predicts and why it is reported but not weighted.
+**The verdict has no measured predictive power, and the screen's score
+leans the wrong way.** The project's own point-in-time backtest (51
+companies, 2013-2019 development window, lookahead and restatement bias
+removed by construction) scores exactly the number the screen orders by and
+finds a *negative* cross-sectional rank correlation with 12-month forward
+returns (mean IC **−0.12**, Newey-West t = −3.3). Most of it is factor
+exposure rather than skill: the score loads on profitability and *against*
+momentum, and its alpha after Fama-French five factors plus momentum is not
+significant. The accrual ratio points the way Sloan (1996) predicts
+(lower accruals, higher returns), but after the same factor controls that
+too stops being significant here.
 
 So this is a structured, inspectable read of financial condition against
 criteria that are written down — not a return forecast, not investment
 advice, and not a target price. The thresholds are deliberately **not** tuned
-to the backtest: with a rank correlation near zero, 51 survivorship-biased
-names and a single market regime, tuning would be overfitting rather than
-calibration. Every weight in `verdict.py` carries its justification inline,
+to the backtest: with about 42 survivorship-biased names per date and a
+single market regime, the smallest effect the test can detect is an IC of
+0.10, and tuning against it would be overfitting rather than calibration. Every weight in `verdict.py` carries its justification inline,
 so you can disagree with a specific one rather than with a black box.
 
 Read `knowledge/analysis-framework.md` for the criteria and, more usefully,
@@ -69,11 +73,21 @@ whatever filings are already cached (52 companies), not all 10,412 filers —
 scoring one needs a live quote and a beta regression, so the screen is built
 offline by `ranking.py` and served from a file.
 
-`backtest.py` measures whether the signal predicts anything. It reconstructs
-each company's package as it stood on a past date — `edgar.panel(facts,
-asof)` only reads filings published by then, which removes lookahead and
-restatement bias together — scores it, and compares against the 12-month
-forward excess return over the S&P 500.
+`backtest.py` measures whether the signal predicts anything. It rebuilds
+each company's package as it stood on a past date with the product's own
+builder — `report.build(..., asof=)` only reads filings published by then,
+which removes lookahead and restatement bias together — values it with that
+month's price, filed share count, 10-year yield (FRED) and a beta regressed
+on the preceding 60 months, scores it with `verdict.assess`, and records the
+screen's `overall` score. The headline statistic is the per-date rank IC
+against excess return over the equal-weight universe, at 1, 3, 6 and 12
+months, with Newey-West t-statistics, quintile spreads and a regression of
+the monthly long-short return on Fama-French five factors plus momentum.
+
+As-of dates are split. Development covers dates whose return ends by
+2019-12; the holdout starts in 2020 and is printed only with `--holdout`,
+each look logged to `data/holdout_log.json`. Any change to weights or
+signals is judged on the development window alone.
 
 Scoring is **self-relative as well as absolute**. A hand-set band saying
 "gross margin above 40% is strong" is unavoidably arbitrary across sectors,
@@ -101,18 +115,28 @@ replicates a published effect and was the strongest signal in this project's
 own test. Piotroski is reported but no longer weighted, because its prior and
 its measurement agree that it does not discriminate here.
 
-**The backtest finding is negative and worth stating plainly: the composite score
-does not rank returns (Spearman rho +0.009 over 583 non-overlapping
-observations).** One component does — the accrual ratio (rho −0.095; the
-below-−6% cohort beat the universe by 5.3pp with a 60% win rate, t = +4.24),
-which is the Sloan effect. Piotroski comes out inverted in this large-cap
-universe, exactly the failure mode `knowledge/analysis-framework.md` already
-documents for it. The verdict is therefore presented as a structured read of
-financial condition against stated criteria, not as a return forecast, and
-the thresholds are deliberately *not* tuned to this data: with rho near
-zero, 51 names and a single market regime, tuning would be overfitting. The
-universe is also survivorship-biased (its mean excess return is +5.3%),
-which inflates every cohort equally.
+**The backtest finding is negative and worth stating plainly.** On the
+development window (24 quarterly dates, about 42 names each) the screen's
+score ranks 12-month returns the wrong way: mean IC −0.12 (t = −3.3), top
+quintile 4.5pp behind the bottom. The sign holds at shorter horizons but
+weakens (−0.06 at one and three months). The factor regression explains
+much of it — loadings of +0.43 on profitability (RMW) and −0.31 on momentum —
+and leaves an alpha of −0.40% a month at t = −1.4, not significant. The
+valuation pillar is the likely source of the momentum tilt: "cheap against
+its own history" mostly selects stocks that have recently fallen, and its
+own IC is negative (−0.08).
+
+The accrual ratio carries the expected sign (IC −0.10 at six months,
+t = −3.6, and the below-−6% cohort beats the universe in the pooled legacy
+test), but its long-short return loads on the investment (CMA) and value
+(HML) factors and has no significant alpha after them. F-Score shows no
+ranking power on the development window (IC ≈ 0.01), consistent with its
+documented weakness among large caps. The verdict is therefore presented as
+a structured read of financial condition against stated criteria, not as a
+return forecast, and the thresholds are deliberately *not* tuned to this
+data. The universe is also survivorship-biased (WBA, delisted in 2025, no
+longer resolves at all), which inflates absolute returns; comparisons
+between names on the same date are less affected.
 
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal
@@ -157,7 +181,8 @@ Command line, no browser needed:
 .venv/bin/python src/analyst.py PFE           # full AI report
 .venv/bin/python src/analyst.py PFE --dry-run # assemble the request, spend nothing
 .venv/bin/python src/validate.py              # data-quality harness
-.venv/bin/python src/backtest.py              # point-in-time signal test (~2 min)
+.venv/bin/python src/backtest.py              # point-in-time signal test, dev window (~2 min)
+.venv/bin/python src/backtest.py --holdout    # also print the 2020+ holdout (logged)
 ```
 
 ## Scope

@@ -118,8 +118,8 @@ WEIGHTS = {
     },
     # The accrual ratio carries the most weight of any single input in the
     # whole model: it replicates a long-established published effect (Sloan
-    # 1996) and was the strongest signal in this project's own backtest
-    # (t = +4.24). Beneish is held down for its high false-positive rate.
+    # 1996) and carries the expected sign in this project's own backtest,
+    # though not after factor controls. Beneish is held down for its high false-positive rate.
     "earnings_quality": {
         "accrual_ratio": 0.50,
         "cash_conversion": 0.35,
@@ -239,7 +239,7 @@ def quality(pkg, val):
     # F-Score is reported but no longer weighted. Piotroski fitted it on
     # small, high-book-to-market firms and it discriminates poorly among
     # large ones; the backtest in `backtest.py` found it inverted in exactly
-    # that universe (rho -0.098, F<=5 beating F>=7). Dropping a component
+    # that universe (pooled rho -0.08, F<=5 beating F>=7; development IC ~0). Dropping a component
     # whose prior and whose measurement agree is not curve-fitting -- but
     # note the thresholds around it are deliberately left alone.
     f = pkg["scores"].get("piotroski")
@@ -536,8 +536,9 @@ def assess(pkg, val=None):
         "basis": "Bu sonuc, knowledge/analysis-framework.md icindeki acikca "
                  "tanimli kriterlere gore mali durumun yapilandirilmis bir "
                  "okumasidir; getiri tahmini degildir. Bilesik skorun ileri "
-                 "getiriyle olculmus siralama gucu sifira yakindir "
-                 "(Spearman rho +0.009). Kanit tasiyan tek girdi 'olculmus "
+                 "getiriyle olculmus siralama gucu yoktur; gelistirme "
+                 "doneminde yonu negatiftir ve bu buyuk olcude bilinen "
+                 "faktor egilimlerinden gelir. Tahakkuk orani 'olculmus "
                  "sinyaller' bolumunde ayrica gosterilir.",
         "disclaimer": "Bu bir analiz araci ciktisidir. Yatirim danismanligi, "
                       "alim-satim tavsiyesi veya hedef fiyat degildir. "
@@ -567,7 +568,7 @@ def _decide(pkg, business, business_score, price):
         return "degerlendirilemez", "İşletme kalitesi hesaplanamadı."
 
     # The accrual gate. This is the one input with measured predictive
-    # evidence behind it (t = +4.24 in this project's backtest, replicating
+    # evidence behind it (the expected sign in this project's backtest, replicating
     # Sloan 1996), and diluting it into a pillar average lets a company with
     # profits that are visibly not turning into cash pass on the strength of
     # its balance sheet. When the accrual ratio is above the framework's
