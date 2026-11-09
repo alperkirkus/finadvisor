@@ -80,7 +80,22 @@ QUINTILES = 5
 
 SIGNALS = ["overall", "business_score", "quality", "safety",
            "earnings_quality", "valuation", "accrual_ratio", "f_score",
-           "fcf_yield", "roic"]
+           "fcf_yield", "roic",
+           "gross_profitability", "asset_growth", "net_issuance", "momentum",
+           "earnings_yield", "multifactor"]
+
+# Candidate signals from the literature, each with the sign its source
+# predicts. The composite averages their within-sector percentiles with
+# equal weight; nothing here is fitted to this data.
+LITERATURE_SIGNS = {
+    "gross_profitability": +1,   # Novy-Marx (2013)
+    "asset_growth": -1,          # Cooper, Gulen & Schill (2008)
+    "net_issuance": -1,          # Pontiff & Woodgate (2008)
+    "momentum": +1,              # Jegadeesh & Titman (1993), 12-1 months
+    "earnings_yield": +1,        # Basu (1977)
+    "accrual_ratio": -1,         # Sloan (1996)
+}
+MIN_COMPONENTS = 3
 PILLAR_KEYS = {"Kalite": "quality", "Güvenlik": "safety",
                "Kâr kalitesi": "earnings_quality", "Değerleme": "valuation"}
 
@@ -308,6 +323,13 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
     fcf = m.get("fcf_ttm")
     fcf_yield = (fcf / (raw[month] * shares)
                  if shares and fcf and fcf > 0 else None)
+    ni = m.get("net_income_ttm")
+    earnings_yield = ni / (raw[month] * shares) if shares and ni is not None else None
+    gm, turnover = m.get("gross_margin"), m.get("asset_turnover")
+    gross_profitability = gm * turnover if gm is not None and turnover else None
+    start, prior = add_months(month, -12), add_months(month, -1)
+    momentum = (closes[prior] / closes[start] - 1
+                if prior in closes and start in closes else None)
 
     forward, bench_forward = {}, {}
     for h in HORIZONS:
@@ -330,8 +352,90 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "accrual_ratio": m.get("accrual_ratio"),
             "roic": m.get("roic"),
             "fcf_yield": fcf_yield,
+            "gross_profitability": gross_profitability,
+            "asset_growth": _asset_growth(facts, asof),
+            "net_issuance": _net_issuance(facts, asof, payload["splits"]),
+            "momentum": momentum,
+            "earnings_yield": earnings_yield,
             "forward": forward,
             "benchmark_forward": bench_forward}
+
+
+def _days_between(a, b):
+    from datetime import date
+    return (date.fromisoformat(b) - date.fromisoformat(a)).days
+
+
+def _asset_growth(facts, asof):
+    """Total assets against four quarters earlier, from filings by `asof`."""
+    series = edgar.instant_series(facts, edgar.INSTANT["assets"], asof)
+    dates = sorted(d for d, v in series.items() if v)
+    if len(dates) < 2:
+        return None
+    now = dates[-1]
+    earlier = [d for d in dates if 330 <= _days_between(d, now) <= 400]
+    if not earlier:
+        return None
+    return series[now] / series[earlier[-1]] - 1
+
+
+def _net_issuance(facts, asof, splits):
+    """Log change in split-adjusted shares over roughly a year, filed by `asof`."""
+    node = facts["facts"].get("dei", {}).get("EntityCommonStockSharesOutstanding")
+    if not node:
+        return None
+    rows = [e for e in node["units"].get("shares", [])
+            if e.get("form") in ("10-K", "10-Q") and e.get("filed", "9999") <= asof
+            and e.get("val")]
+    if not rows:
+        return None
+    now = max(rows, key=lambda e: e["end"])
+    earlier = [e for e in rows if 330 <= _days_between(e["end"], now["end"]) <= 400]
+    if not earlier:
+        return None
+    then = max(earlier, key=lambda e: e["end"])
+
+    def adjusted(e):
+        count = e["val"]
+        for sp in splits:
+            if sp["date"] > e["end"]:
+                count *= sp["factor"]
+        return count
+    return math.log(adjusted(now) / adjusted(then))
+
+
+def add_composite(rows):
+    """Equal-weight average of the literature signals' within-sector percentiles.
+
+    Percentiles are taken among the same date's names in the same sector
+    bucket (or the whole date when the bucket has fewer than five), each
+    flipped to the sign its source predicts. A row needs at least
+    MIN_COMPONENTS signals; otherwise it gets no composite rather than one
+    built from a single input.
+    """
+    by_month = defaultdict(list)
+    for r in rows:
+        by_month[r["month"]].append(r)
+    for group in by_month.values():
+        pct = defaultdict(dict)
+        for key, sign in LITERATURE_SIGNS.items():
+            have = [r for r in group if r.get(key) is not None]
+            sectors = defaultdict(list)
+            for r in have:
+                sectors[r["sector"]].append(r)
+            for members in sectors.values():
+                pool = members if len(members) >= 5 else have
+                if len(pool) < 2:
+                    continue
+                ranks = _avg_ranks([r[key] for r in pool])
+                index = {id(r): rank for r, rank in zip(pool, ranks)}
+                for r in members:
+                    p = index[id(r)] / (len(pool) - 1)
+                    pct[id(r)][key] = p if sign > 0 else 1 - p
+        for r in group:
+            parts = pct.get(id(r), {})
+            r["multifactor"] = (sum(parts.values()) / len(parts)
+                                if len(parts) >= MIN_COMPONENTS else None)
 
 
 def legacy_universe():
@@ -394,6 +498,7 @@ def run(universe, start=2013, end=2025, workers=None):
             if i % 50 == 0 or i == len(universe):
                 print("  %d/%d sirket, %d gozlem" % (i, len(universe), len(rows)))
     rows.sort(key=lambda r: (r["asof"], r["ticker"]))
+    add_composite(rows)
     _add_excess(rows)
     return rows, dict(skips), unavailable
 
@@ -502,7 +607,7 @@ def _lag(h):
     return max(0, math.ceil(h / 3) - 1)
 
 
-def _cross_sections(rows, key, h, seg):
+def _cross_sections(rows, key, h, seg, with_sector=False):
     by_month = defaultdict(list)
     for r in rows:
         if segment(r["month"], h) != seg:
@@ -510,15 +615,41 @@ def _cross_sections(rows, key, h, seg):
         x, y = r.get(key), (r.get("excess") or {}).get(h)
         if x is None or y is None:
             continue
-        by_month[r["month"]].append((x, y))
+        by_month[r["month"]].append((x, y, r["sector"]) if with_sector else (x, y))
     return dict(sorted(by_month.items()))
 
 
-def ic_stats(rows, key, h, seg):
-    sections = _cross_sections(rows, key, h, seg)
+def sector_neutral_ic(triples):
+    """Rank IC after removing each sector's mean rank from signal and return.
+
+    What is left is whether the signal orders names *within* their sector;
+    a signal that only sorts banks below software firms scores zero here.
+    """
+    if len(triples) < MIN_CROSS_SECTION:
+        return None
+    rx = _avg_ranks([t[0] for t in triples])
+    ry = _avg_ranks([t[1] for t in triples])
+    groups = defaultdict(list)
+    for i, t in enumerate(triples):
+        groups[t[2]].append(i)
+    xs, ys = [], []
+    for idx in groups.values():
+        if len(idx) < 2:
+            continue
+        mx = sum(rx[i] for i in idx) / len(idx)
+        my = sum(ry[i] for i in idx) / len(idx)
+        xs.extend(rx[i] - mx for i in idx)
+        ys.extend(ry[i] - my for i in idx)
+    if len(xs) < MIN_CROSS_SECTION:
+        return None
+    return _pearson(xs, ys)
+
+
+def ic_stats(rows, key, h, seg, neutral=False):
+    sections = _cross_sections(rows, key, h, seg, with_sector=neutral)
     ics, skipped = [], 0
     for month, pairs in sections.items():
-        ic = rank_ic(pairs)
+        ic = sector_neutral_ic(pairs) if neutral else rank_ic(pairs)
         if ic is None:
             skipped += 1
             continue
@@ -756,13 +887,18 @@ def summarise(rows, skips, payloads, ff, segments=("dev",)):
             "karar icin ic/quintiles/factor bolumlerinin dev kismi kullanilir.",
         ],
     }
+    out["ic_sector_neutral"] = {}
     for seg in segments:
         out["ic"][seg] = {str(h): {k: ic_stats(rows, k, h, seg) for k in SIGNALS}
                           for h in HORIZONS}
+        out["ic_sector_neutral"][seg] = {
+            str(h): {k: ic_stats(rows, k, h, seg, neutral=True) for k in SIGNALS}
+            for h in (3, HOLD_MONTHS)}
         out["quintiles"][seg] = {str(h): {k: quintile_stats(rows, k, h, seg)
                                           for k in SIGNALS}
                                  for h in (3, HOLD_MONTHS)}
-    for key in ("overall", "accrual_ratio"):
+    for key in ("overall", "accrual_ratio", "multifactor", "gross_profitability",
+                "asset_growth", "net_issuance", "earnings_yield"):
         series = long_short_monthly(rows, key, payloads)
         for seg in segments:
             if seg == "dev":
@@ -808,7 +944,7 @@ def _print(s):
     for seg in s["split"]["reported"]:
         print("\n=== %s ===" % seg.upper())
         print("Kesitsel IC (esit agirlikli evrene gore fazla getiri):")
-        print("  %-17s %s" % ("sinyal", "  ".join("%14s" % ("%day ic (t)" % h)
+        print("  %-20s %s" % ("sinyal", "  ".join("%14s" % ("%day ic (t)" % h)
                                                   for h in HORIZONS)))
         for k in SIGNALS:
             cells = []
@@ -816,19 +952,29 @@ def _print(s):
                 c = s["ic"][seg][str(h)][k]
                 cells.append("%14s" % ("-" if c.get("insufficient") else
                                        "%+.3f (%+.1f)" % (c["mean_ic"], c["nw_t"] or 0)))
-            print("  %-17s %s" % (k, "  ".join(cells)))
+            print("  %-20s %s" % (k, "  ".join(cells)))
         c = s["ic"][seg][str(HOLD_MONTHS)]["overall"]
         if not c.get("insufficient"):
             print("  12ay overall: %d tarih, tarih basina %.0f sirket, "
                   "tespit edilebilir min IC %.3f"
                   % (c["dates"], c["avg_names"], c["min_detectable_ic"]))
 
+        print("\nSektor-notr IC (sektor ici siralama):")
+        print("  %-20s %16s %16s" % ("sinyal", "3ay ic (t)", "12ay ic (t)"))
+        for k in SIGNALS:
+            cells = []
+            for h in (3, HOLD_MONTHS):
+                c = s["ic_sector_neutral"][seg][str(h)][k]
+                cells.append("%16s" % ("-" if c.get("insufficient") else
+                                       "%+.3f (%+.1f)" % (c["mean_ic"], c["nw_t"] or 0)))
+            print("  %-20s %s" % (k, " ".join(cells)))
+
         print("\nBeslik dilimler, 12 ay (Q1 dusuk sinyal -> Q5 yuksek):")
         for k in SIGNALS:
             q = s["quintiles"][seg][str(HOLD_MONTHS)][k]
             if q.get("insufficient"):
                 continue
-            print("  %-17s %s  Q5-Q1 %+6.2f%% t=%+.2f"
+            print("  %-20s %s  Q5-Q1 %+6.2f%% t=%+.2f"
                   % (k, " ".join("%+6.2f%%" % (v * 100) if v is not None else "      -"
                                  for v in q["quintile_mean_excess"]),
                      q["top_minus_bottom"] * 100, q["nw_t"] or 0))
@@ -836,16 +982,16 @@ def _print(s):
         print("\nFaktor regresyonu (aylik Q5-Q1, FF5 + momentum):")
         for key, reg in s["factor"][seg].items():
             if reg.get("insufficient"):
-                print("  %-14s yetersiz (%d ay)" % (key, reg["months"]))
+                print("  %-20s yetersiz (%d ay)" % (key, reg["months"]))
                 continue
             loads = " ".join("%s %+.2f" % (n, v["beta"]) for n, v in reg["loadings"].items())
-            print("  %-14s ham %+.2f%%/ay  alpha %+.2f%%/ay t=%+.2f  R2 %.2f  [%s]"
+            print("  %-20s ham %+.2f%%/ay  alpha %+.2f%%/ay t=%+.2f  R2 %.2f  [%s]"
                   % (key, reg["raw_mean_monthly"] * 100, reg["alpha_monthly"] * 100,
                      reg["alpha_t"] or 0, reg["r2"] or 0, loads))
 
     print("\nLegacy (Aralik, 12 ay, S&P'ye gore, butun yillar):")
     for key, rho in s["rank_correlations"].items():
-        print("  %-17s %s" % (key, rho))
+        print("  %-20s %s" % (key, rho))
     for c in s["cohorts"]:
         if c.get("insufficient"):
             print("  %-24s n=%-4d yetersiz" % (c["name"], c["n"]))

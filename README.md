@@ -147,6 +147,23 @@ have neither a CIK in the SEC ticker map nor a free price history any more.
 That inflates absolute returns; comparisons between names on the same date
 are less affected. `--universe legacy` reruns the original 51-name list.
 
+The backtest also measures the textbook accounting anomalies as candidate
+replacements, each with the sign its source predicts: gross profitability
+(Novy-Marx 2013), asset growth (Cooper, Gulen & Schill 2008), net share
+issuance (Pontiff & Woodgate 2008), 12-1 month momentum (Jegadeesh & Titman
+1993) and earnings yield (Basu 1977), plus an equal-weight composite of their
+within-sector percentiles with the accrual ratio. Every IC is also reported
+sector-neutral, so a signal that only sorts banks below software firms
+scores zero. On the development window none of them, and not the composite,
+ranks S&P 500 returns: every 12-month IC is within ±0.03, below the 0.06 the
+sample can detect, and the composite's alpha after the six factors is
+0.01% a month. Their factor loadings are the expected ones (asset growth
+−0.59 on CMA, earnings yield +0.72 on HML, gross profitability +0.43 on
+RMW), so the signals are built correctly; among large US companies in
+2013-2019 they simply earned nothing beyond the factors they proxy. Nothing
+from this set is promoted into the verdict, and the holdout stays unopened
+until a candidate earns a look on the development window.
+
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal
 year, the balance sheet identity, sign conventions and period continuity
