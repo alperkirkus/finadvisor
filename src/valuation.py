@@ -295,10 +295,14 @@ def historical_multiple(pkg, shares, asof=None):
 
     ticker = pkg["company"]["ticker"]
     try:
-        payload = backtest.prices(ticker)
+        payload = backtest.prices(ticker, need_raw=True)
     except Exception:
         return None
-    series, splits = payload["closes"], payload["splits"]
+    # A market value needs the price as traded, adjusted for splits only.
+    # The dividend-adjusted series lowers every past price by the dividends
+    # paid since, which understated past multiples -- by a fifth or more for
+    # a decade of a 2-3% yield -- and pulled every fair value down with them.
+    series, splits = payload["raw"], payload["splits"]
 
     fcf_series = (pkg["trends"].get("fcf_ttm") or {}).get("series") or []
     debt_series = dict((pkg["trends"].get("net_debt") or {}).get("series") or [])

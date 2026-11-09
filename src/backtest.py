@@ -72,7 +72,7 @@ UNIVERSE = [
 ]
 
 HOLD_MONTHS = 12
-HORIZONS = (1, 3, 6, 12)
+HORIZONS = (1, 3, 6, 12, 24, 36)
 DEV_END = "2019-12"          # last month whose return belongs to development
 HOLDOUT_START = "2020-01"
 MIN_CROSS_SECTION = 20       # fewer names than this and a date's IC is noise
@@ -83,7 +83,7 @@ SIGNALS = ["overall", "business_score", "quality", "safety",
            "fcf_yield", "roic",
            "gross_profitability", "asset_growth", "net_issuance", "momentum",
            "earnings_yield", "multifactor", "sue", "revenue_surprise",
-           "volatility"]
+           "volatility", "upside", "dcf_upside"]
 
 # Candidate signals from the literature, each with the sign its source
 # predicts. The composite averages their within-sector percentiles with
@@ -359,6 +359,11 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "net_issuance": _net_issuance(facts, asof, payload["splits"]),
             "momentum": momentum,
             "earnings_yield": earnings_yield,
+            "upside": (val or {}).get("upside_to_fair"),
+            "revenue_growth": m.get("revenue_growth_yoy"),
+            "fcf_margin_trend": (pkg["trends"].get("fcf_margin") or {}).get("direction"),
+            "revenue_trend": (pkg["trends"].get("revenue_ttm") or {}).get("direction"),
+            "dcf_upside": (val or {}).get("dcf_upside"),
             "sue": _surprise(facts, asof, "eps_diluted"),
             "revenue_surprise": _surprise(facts, asof, "revenue"),
             "forward": forward,
