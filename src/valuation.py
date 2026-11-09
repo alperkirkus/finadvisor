@@ -94,6 +94,24 @@ def beta(ticker):
         market = _returns(_monthly_closes(MARKET_INDEX))
     except Exception:
         return None
+    return _regress_beta(stock, market)
+
+
+def beta_asof(stock_closes, market_closes, asof, months=60):
+    """The beta a live run would have regressed on `asof`.
+
+    Same regression as `beta`, over the `months` monthly returns ending at
+    the as-of month, from {YYYY-MM: close} series.
+    """
+    end = asof[:7]
+    keys = sorted(k for k in stock_closes if k <= end and k in market_closes)
+    keys = keys[-(months + 1):]
+    pairs_s = [(k, stock_closes[k]) for k in keys]
+    pairs_m = [(k, market_closes[k]) for k in keys]
+    return _regress_beta(_returns(pairs_s), _returns(pairs_m))
+
+
+def _regress_beta(stock, market):
     shared = sorted(set(stock) & set(market))
     if len(shared) < 36:
         return None
@@ -118,12 +136,22 @@ def risk_free_rate():
         return None
 
 
-def cost_of_capital(pkg, mcap, debt):
-    """Per-company WACC: CAPM equity cost, realised debt cost, market weights."""
+def cost_of_capital(pkg, mcap, debt, market=None):
+    """Per-company WACC: CAPM equity cost, realised debt cost, market weights.
+
+    `market` supplies the risk-free rate and beta as of a past date. In that
+    mode a missing input raises instead of falling back to the sector rate:
+    a backtest scored on a substituted rate would measure the substitute.
+    """
     sector = pkg["company"]["sector_bucket"]
     m = pkg["latest_metrics"]
-    rf = risk_free_rate()
-    b = beta(pkg["company"]["ticker"])
+    if market is not None:
+        rf, b = market.get("risk_free"), market.get("beta")
+        if rf is None or b is None or not mcap:
+            raise RuntimeError("point-in-time risk-free rate or beta missing")
+    else:
+        rf = risk_free_rate()
+        b = beta(pkg["company"]["ticker"])
     if rf is None or b is None or not mcap:
         return {"wacc": WACC_FALLBACK.get(sector, WACC_FALLBACK["unknown"]),
                 "method": "sektor varsayimi (beta veya faiz alinamadi)"}
@@ -215,7 +243,7 @@ def implied_growth(target_ev, fcf0, wacc):
     return round((lo + hi) / 2, 4)
 
 
-def shares_series(cik):
+def shares_series(cik, asof=None):
     """{period_end: share count} from the filing cover pages.
 
     Buybacks make today's share count useless for a past period: Apple
@@ -229,22 +257,29 @@ def shares_series(cik):
         return {}
     out = {}
     for e in node["units"].get("shares", []):
-        if e.get("form") in ("10-K", "10-Q"):
+        if e.get("form") in ("10-K", "10-Q") and \
+                (asof is None or e.get("filed", "9999") <= asof):
             out[e["end"]] = e["val"]
     return out
 
 
-def _nearest_shares(series, when):
-    """The share count reported on or before a date, else the earliest after."""
+def _nearest_shares(series, when, strict=False):
+    """The share count reported on or before a date, else the earliest after.
+
+    `strict` drops the later-count fallback: on a past as-of date a later
+    count is information the decision could not have had.
+    """
     if not series:
         return None
     earlier = [d for d in series if d <= when]
     if earlier:
         return series[max(earlier)]
+    if strict:
+        return None
     return series[min(series)]
 
 
-def historical_multiple(pkg, shares):
+def historical_multiple(pkg, shares, asof=None):
     """What the market has typically paid for this company's own cash flow.
 
     A discounted cash flow needs a discount rate, and the rate is where the
@@ -268,7 +303,7 @@ def historical_multiple(pkg, shares):
     fcf_series = (pkg["trends"].get("fcf_ttm") or {}).get("series") or []
     debt_series = dict((pkg["trends"].get("net_debt") or {}).get("series") or [])
     debt_now = pkg["latest_metrics"].get("net_debt") or 0
-    share_hist = shares_series(pkg["company"]["cik"])
+    share_hist = shares_series(pkg["company"]["cik"], asof)
 
     observations = []
     for date_str, fcf in fcf_series:
@@ -276,10 +311,18 @@ def historical_multiple(pkg, shares):
             continue
         # Filings land about a month after period end, so the multiple the
         # market was paying is measured a month later, not on the period end.
-        price = series.get(_month_after(date_str))
+        month = _month_after(date_str)
+        if asof is not None and month > asof[:7]:
+            continue
+        price = series.get(month)
         if not price:
             continue
-        count = _nearest_shares(share_hist, date_str) or shares
+        if asof is not None:
+            count = _nearest_shares(share_hist, date_str, strict=True)
+            if not count:
+                continue
+        else:
+            count = _nearest_shares(share_hist, date_str) or shares
         # Put the reported count on the same basis as the adjusted price by
         # applying every split that happened after the period.
         for sp in splits:
@@ -365,12 +408,25 @@ def _hist_growth(pkg, key="fcf_ttm", years=5):
     return max(-0.05, min(0.15, cagr))
 
 
-def value(pkg):
-    """Full price-aware valuation of an evidence package."""
+def value(pkg, market=None):
+    """Full price-aware valuation of an evidence package.
+
+    `market` reconstructs the valuation as of a past date. It supplies
+    `asof`, `price`, `shares` (on the same split basis as `price`),
+    `risk_free` and `beta`; every other input comes from the package, which
+    is already point-in-time when built with `asof`. Without it the quote,
+    share count, rate and beta are read live.
+    """
     company = pkg["company"]
     m = pkg["latest_metrics"]
-    q = quote(company["ticker"])
-    shares = shares_outstanding(company["cik"])
+    if market is not None:
+        q = {"price": market["price"], "currency": "USD", "exchange": None,
+             "as_of_epoch": None, "month_low": None, "month_high": None,
+             "source": "point-in-time monthly close %s" % market["asof"][:7]}
+        shares = market["shares"]
+    else:
+        q = quote(company["ticker"])
+        shares = shares_outstanding(company["cik"])
     if not shares:
         raise RuntimeError("hisse sayisi bulunamadi")
 
@@ -378,7 +434,7 @@ def value(pkg):
     mcap = price * shares
     net_debt = m.get("net_debt")
     ev = mcap + net_debt if net_debt is not None else None
-    capital = cost_of_capital(pkg, mcap, m.get("total_debt"))
+    capital = cost_of_capital(pkg, mcap, m.get("total_debt"), market)
     wacc = capital["wacc"]
 
     ni, fcf = m.get("net_income_ttm"), m.get("fcf_ttm")
@@ -459,7 +515,8 @@ def value(pkg):
     # The headline estimate: the company's own typical multiple applied to
     # normalised cash flow. The discounted value is kept as a cross-check
     # rather than the answer.
-    hist_mult = historical_multiple(pkg, shares)
+    hist_mult = historical_multiple(pkg, shares,
+                                    market["asof"] if market else None)
     reversion = None
     if hist_mult and fcf_base and fcf_base > 0:
         def per_share(multiple):

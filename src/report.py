@@ -18,12 +18,18 @@ TREND_KEYS = ["revenue_ttm", "net_income_ttm", "fcf_ttm", "ebitda_ttm",
               "interest_coverage", "cash_conversion"]
 
 
-def build(ticker, quarters=20, asof=None):
-    """Evidence package. `asof` reconstructs it as of a past date."""
+def build(ticker, quarters=20, asof=None, facts=None):
+    """Evidence package. `asof` reconstructs it as of a past date.
+
+    `facts` lets a caller that builds many as-of packages for one company
+    load its companyfacts once instead of once per date.
+    """
     cik, _ = edgar.resolve_cik(ticker)
     prof = edgar.profile(cik)
     sec = edgar.sector(prof["sic"])
-    panel = edgar.panel(edgar.companyfacts(cik), asof)
+    if facts is None:
+        facts = edgar.companyfacts(cik)
+    panel = edgar.panel(facts, asof)
     hist = M.history(panel, sec, quarters)
     if not hist:
         # A normal exception, not SystemExit: callers that score a universe

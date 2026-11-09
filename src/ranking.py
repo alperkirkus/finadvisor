@@ -45,6 +45,17 @@ def cached_universe():
     return out
 
 
+def overall_score(business, price_score):
+    """The number the screen orders by; the backtest scores the same one."""
+    # Quality carries more than price, but a screen that ignored price would
+    # just list the largest good companies at any valuation.
+    if business is None:
+        return None
+    if price_score is None:
+        return round(business * 0.75, 1)
+    return round(business * 0.6 + price_score * 0.4, 1)
+
+
 def score(ticker):
     pkg = report.build(ticker, quarters=40)
     try:
@@ -55,15 +66,7 @@ def score(ticker):
     pillars = {p["name"]: p["score"] for p in a["pillars"]}
     business = a["business_score"]
     price_score = pillars.get("Değerleme")
-
-    # Quality carries more than price, but a screen that ignored price would
-    # just list the largest good companies at any valuation.
-    if business is None:
-        overall = None
-    elif price_score is None:
-        overall = round(business * 0.75, 1)
-    else:
-        overall = round(business * 0.6 + price_score * 0.4, 1)
+    overall = overall_score(business, price_score)
 
     # A large model-versus-market gap is exactly what the single-company view
     # warns about, so the screen must not promote a company on the strength
