@@ -214,10 +214,11 @@ history as the sustainable rate and the CAPM cost of equity (Damodaran,
 *Investment Valuation*, ch. 21) — scored on ROE against the cost of equity
 and on equity-to-assets, with cash-flow and accrual measures withheld as
 meaningless for a bank. Specified from the textbook before any test and
-not tuned, that fair value ranks financial-sector returns in both windows:
-12-month IC +0.15 (t = 5.9) in 2013-2019 and +0.17 (t = 4.9) in 2020-2025,
-cheapest quintile ahead of the dearest by 8.8pp and 5.9pp a year, positive
-in 11 of 13 years. The banks that failed in 2023 (SVB, First Republic,
+not tuned, the valuation pillar built on it ranks financial-sector returns
+in both windows: 12-month IC +0.15 (t = 5.9) in 2013-2019 and +0.17
+(t = 4.9) in 2020-2025. The fair-value upside alone does too (+0.14 and
++0.11), its cheapest quintile ahead of the dearest by 8.8pp and 5.9pp a
+year, positive in 11 of 13 years. The banks that failed in 2023 (SVB, First Republic,
 Signature) are not in the data, so the later window is somewhat flattering.
 
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
