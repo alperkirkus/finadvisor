@@ -657,15 +657,19 @@ def value(pkg, market=None):
                          hist_mult["span"][0][:7], hist_mult["span"][-1][:7])),
         }
 
-    volatility = None
+    volatility = issuance = None
     try:
         import backtest
-        closes = backtest.prices(company["ticker"], max_age_days=(
-            None if market else LIVE_PRICE_MAX_AGE))["closes"]
+        payload = backtest.prices(company["ticker"], max_age_days=(
+            None if market else LIVE_PRICE_MAX_AGE))
+        closes = payload["closes"]
         end = market["asof"][:7] if market else max(closes)
         volatility = trailing_volatility(closes, end)
+        issuance = edgar.net_issuance(edgar.companyfacts(company["cik"]),
+                                      market["asof"] if market else None,
+                                      payload["splits"])
     except Exception:
-        volatility = None
+        volatility = issuance = None
 
     bank = driver = None
     if company["sector_bucket"] == "financial":
@@ -702,6 +706,7 @@ def value(pkg, market=None):
                                 "tahvili, risk primi %4.5 varsayımıdır."},
         "dcf": dcf,
         "volatility": volatility,
+        "net_issuance": issuance,
         "sensitivity": sensitivity,
         "reversion": reversion,
         "dcf_fair_value": fair,

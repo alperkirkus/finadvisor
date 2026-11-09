@@ -273,6 +273,33 @@ def share_counts(facts, asof=None):
     return {}
 
 
+def net_issuance(facts, asof, splits):
+    """Log change in split-adjusted share count over about a year.
+
+    Positive means new shares were issued (dilution), negative means a net
+    buyback (Pontiff & Woodgate 2008). `splits` is [{"date", "factor"}] from
+    the price history; counts are put on today's split basis before the
+    comparison. Uses only counts filed by `asof` (today when None).
+    """
+    import math
+    counts = share_counts(facts, asof)
+    if not counts:
+        return None
+    now = max(counts)
+    earlier = [d for d in counts if 330 <= _days(d, now) <= 400]
+    if not earlier:
+        return None
+    then = max(earlier)
+
+    def adjusted(end):
+        count = counts[end]
+        for sp in splits:
+            if sp["date"] > end:
+                count *= sp["factor"]
+        return count
+    return math.log(adjusted(now) / adjusted(then))
+
+
 def annual_flows(facts, chain, asof=None):
     return {e: v for (s, e), v in _periods(facts, chain, asof).items()
             if 330 <= _days(s, e) <= 400}

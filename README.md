@@ -243,6 +243,24 @@ years in 2013-2019 but trailed them by 1.4pp in 2020-2025. The later window
 alone looks better (IC +0.047, t = 2.5), which is exactly the kind of result
 the development/holdout split exists to keep out of the product.
 
+Mid and small caps were tested last, on the S&P 400 and S&P 600 as they
+stood on each date, rebuilt from the dated addition and removal tables on
+their Wikipedia pages (S&P 400 from 2012, S&P 600 from December 2019, so
+the 2013-2019 window is S&P 400 only, about 200 names a date). Two results
+held against criteria written before the 2020-2025 look:
+
+- **Net share issuance** (Pontiff & Woodgate 2008), invisible among large
+  caps, ranks mid/small returns: 12-month IC −0.049 (t = −2.5) in
+  2013-2019 and −0.087 (t = −3.0) in 2020-2025. Each verdict now reports
+  the last year's net issuance as a measured read, with that scope stated.
+- **The bank justified P/B** replicates in a third universe: within
+  financials +0.125 (t = 2.6) and +0.139 (t = 4.8).
+
+The overall score, the reversion fair value and the remaining anomalies show
+no edge there either. `--universe midsmall` reproduces the run; research
+universes write `backtest_summary_<universe>.json` so they never change the
+S&P 500 evidence the verdict cites.
+
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal
 year, the balance sheet identity, sign conventions and period continuity

@@ -15,6 +15,7 @@ import json
 import os
 import time
 import urllib.request
+from datetime import datetime
 from html.parser import HTMLParser
 
 import edgar
@@ -65,14 +66,15 @@ def is_member(intervals, date):
 
 
 class _Table(HTMLParser):
-    """Rows of the table with id="constituents"."""
+    """Rows of the Wikipedia table with the given id."""
 
-    def __init__(self):
+    def __init__(self, table_id="constituents"):
         super().__init__()
+        self.table_id = table_id
         self.rows, self.row, self.cell, self.inside = [], None, None, False
 
     def handle_starttag(self, tag, attrs):
-        if tag == "table" and dict(attrs).get("id") == "constituents":
+        if tag == "table" and dict(attrs).get("id") == self.table_id:
             self.inside = True
         elif self.inside and tag == "tr":
             self.row = []
@@ -117,6 +119,99 @@ def wikipedia_ciks(refresh=False):
     return out
 
 
+# Mid and small caps. Wikipedia carries each index's current constituents
+# and a dated table of additions and removals; walking the changes backwards
+# from today rebuilds who was in the index on any date the table covers.
+# Before its first change the membership is unknown, so a name is never
+# placed in the index earlier than that.
+INDEX_PAGES = {
+    "sp400": "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies",
+    "sp600": "https://en.wikipedia.org/wiki/List_of_S%26P_600_companies",
+}
+
+
+def index_membership(index, refresh=False):
+    """({ticker: [(start, end_or_None)]}, {ticker: cik}, coverage_start)."""
+    os.makedirs(DATA, exist_ok=True)
+    path = os.path.join(DATA, "%s_wikipedia.html" % index)
+    if refresh or not os.path.exists(path):
+        _download(INDEX_PAGES[index], path)
+    html = open(path, encoding="utf-8").read()
+
+    cons = _Table("constituents")
+    cons.feed(html)
+    header, current, ciks = None, set(), {}
+    for row in cons.rows:
+        if header is None:
+            header = row
+            continue
+        rec = dict(zip(header, row))
+        if rec.get("Symbol"):
+            current.add(rec["Symbol"])
+            if rec.get("CIK", "").isdigit():
+                ciks[rec["Symbol"]] = int(rec["CIK"])
+    if len(current) < 300:
+        raise ValueError("%s constituents parsed to %d rows" % (index, len(current)))
+
+    changes = _Table("changes")
+    changes.feed(html)
+    events, last_date = [], None
+    for row in changes.rows[2:]:
+        try:
+            when = datetime.strptime(row[0].split("[")[0].strip(), "%B %d, %Y").date().isoformat()
+            cells = row[1:]
+        except (ValueError, IndexError):
+            when, cells = last_date, row       # rows sharing a rowspan date cell
+        if when is None:
+            continue
+        last_date = when
+        added = cells[0].strip() if len(cells) > 0 else ""
+        removed = cells[2].strip() if len(cells) > 2 else ""
+        events.append((when, added, removed))
+    if not events:
+        raise ValueError("%s changes table is empty" % index)
+    coverage = min(e[0] for e in events)
+
+    # Walk backwards: an addition on d opens the interval at d, a removal on
+    # d means the name was in until d.
+    open_end = {t: None for t in current}
+    intervals = {}
+    for when, added, removed in sorted(events, reverse=True):
+        if added and added in open_end:
+            intervals.setdefault(added, []).append((when, open_end.pop(added)))
+        if removed and removed not in open_end:
+            open_end[removed] = when
+    for t, end in open_end.items():
+        intervals.setdefault(t, []).append((coverage, end))
+    return intervals, ciks, coverage
+
+
+def midsmall_universe(start="2013-01-01", end="2025-12-31"):
+    """S&P 400 and S&P 600 members over the window, resolved to CIKs.
+
+    A name in both indices at different times keeps both intervals; one that
+    moved up into the S&P 500 is scored here only while it was mid or small.
+    """
+    wiki = wikipedia_ciks()
+    merged, ciks, coverage = {}, dict(wiki), {}
+    for index in ("sp400", "sp600"):
+        iv, c, cov = index_membership(index)
+        coverage[index] = cov
+        ciks.update(c)
+        for t, spans in iv.items():
+            merged.setdefault(t, []).extend(spans)
+    out, unresolved = {}, []
+    for ticker, spans in sorted(merged.items()):
+        if not any(s <= end and (e is None or e >= start) for s, e in spans):
+            continue
+        cik = resolve(ticker, ciks)
+        if cik is None:
+            unresolved.append(ticker)
+            continue
+        out[ticker] = {"cik": cik, "intervals": spans}
+    return out, unresolved, coverage
+
+
 def resolve(ticker, wiki):
     """CIK for a membership ticker, or None. Never guesses from a name."""
     if ticker in wiki:
@@ -159,41 +254,74 @@ def _sec_contact():
             return
 
 
-def prefetch(universe, price_fn):
-    """Downloads missing companyfacts and price histories, politely.
+class _RateLimit:
+    """At most `per_second` calls across all threads."""
 
-    SEC allows ten requests a second; Yahoo publishes no limit, so it gets a
-    pause too. Failures are returned, not raised: one missing name must not
-    stop a 600-name run.
+    def __init__(self, per_second):
+        import threading
+        self.gap, self.lock, self.next = 1.0 / per_second, threading.Lock(), 0.0
+
+    def wait(self):
+        with self.lock:
+            now = time.monotonic()
+            slot = max(now, self.next)
+            self.next = slot + self.gap
+        time.sleep(max(0.0, slot - now))
+
+
+def prefetch(universe, price_fn, workers=6):
+    """Downloads missing companyfacts, submissions and price histories.
+
+    Runs `workers` companies at a time. SEC allows ten requests a second, so
+    SEC calls share a limiter set below that; Yahoo gets its own, gentler
+    one. Already-cached files are skipped, so an interrupted run resumes.
+    Failures are returned, not raised: one missing name must not stop a
+    thousand-name run.
     """
+    from concurrent.futures import ThreadPoolExecutor
     _sec_contact()
-    failures = {}
-    for i, (ticker, rec) in enumerate(sorted(universe.items()), 1):
+    sec, yahoo = _RateLimit(8), _RateLimit(4)
+
+    def one(item):
+        ticker, rec = item
         facts_path = os.path.join(edgar.CACHE, "facts_%010d.json" % rec["cik"])
         sub_path = os.path.join(edgar.CACHE, "sub_%010d.json" % rec["cik"])
         try:
             if not os.path.exists(facts_path):
+                sec.wait()
                 edgar.companyfacts(rec["cik"])
-                time.sleep(0.15)
             if not os.path.exists(sub_path):
+                sec.wait()
                 edgar.profile(rec["cik"])
-                time.sleep(0.15)
         except Exception as exc:
-            failures[ticker] = "facts: %s" % exc
-            continue
+            return ticker, "facts: %s" % exc
         try:
+            yahoo.wait()
             price_fn(yahoo_symbol(ticker), need_raw=True)
-            time.sleep(0.3)
         except Exception as exc:
-            failures[ticker] = "prices: %s" % exc
-        if i % 50 == 0:
-            print("  prefetch %d/%d (%d hata)" % (i, len(universe), len(failures)))
+            return ticker, "prices: %s" % exc
+        return ticker, None
+
+    failures, done = {}, 0
+    with ThreadPoolExecutor(workers) as pool:
+        for ticker, err in pool.map(one, sorted(universe.items())):
+            done += 1
+            if err:
+                failures[ticker] = err
+            if done % 100 == 0:
+                print("  prefetch %d/%d (%d hata)" % (done, len(universe), len(failures)),
+                      flush=True)
     return failures
 
 
 if __name__ == "__main__":
+    import sys
     import backtest
-    uni, unresolved = backtest_universe()
+    if "--midsmall" in sys.argv:
+        uni, unresolved, cov = midsmall_universe()
+        print("kapsam baslangici: %s" % cov)
+    else:
+        uni, unresolved = backtest_universe()
     print("%d uye, %d CIK cozulemedi" % (len(uni), len(unresolved)))
     failures = prefetch(uni, backtest.prices)
     json.dump({"unresolved": unresolved, "failures": failures},

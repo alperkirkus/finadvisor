@@ -362,7 +362,7 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "fcf_yield": fcf_yield,
             "gross_profitability": gross_profitability,
             "asset_growth": _asset_growth(facts, asof),
-            "net_issuance": _net_issuance(facts, asof, payload["splits"]),
+            "net_issuance": edgar.net_issuance(facts, asof, payload["splits"]),
             "momentum": momentum,
             "earnings_yield": earnings_yield,
             "upside": (val or {}).get("upside_to_fair"),
@@ -385,7 +385,7 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
 
 def _insider(cik, asof):
     trades = _WORKER.get("insider")
-    if trades is None or cik is None:
+    if trades is None or cik is None or str(cik) not in _WORKER["insider_covered"]:
         return {"insider_buyers_6m": None, "insider_npr_12m": None}
     return insider.signal(trades.get(str(cik)), asof)
 
@@ -406,26 +406,6 @@ def _asset_growth(facts, asof):
     if not earlier:
         return None
     return series[now] / series[earlier[-1]] - 1
-
-
-def _net_issuance(facts, asof, splits):
-    """Log change in split-adjusted shares over roughly a year, filed by `asof`."""
-    counts = edgar.share_counts(facts, asof)
-    if not counts:
-        return None
-    now = max(counts)
-    earlier = [d for d in counts if 330 <= _days_between(d, now) <= 400]
-    if not earlier:
-        return None
-    then = max(earlier)
-
-    def adjusted(end):
-        count = counts[end]
-        for sp in splits:
-            if sp["date"] > end:
-                count *= sp["factor"]
-        return count
-    return math.log(adjusted(now) / adjusted(then))
 
 
 def _surprise(facts, asof, concept, history=8, min_history=6):
@@ -514,14 +494,17 @@ def legacy_universe():
 _WORKER = {}
 
 
-INSIDER_TRADES = os.path.join(DATA, "insider", "trades_sp500.json")
-
-
-def _init_worker(start, end):
-    # Insider trades are optional input: without the file the two insider
-    # columns stay None rather than reading as "no insider bought".
-    _WORKER["insider"] = (json.load(open(INSIDER_TRADES))
-                          if os.path.exists(INSIDER_TRADES) else None)
+def _init_worker(start, end, universe_name="sp500"):
+    # Insider trades are optional input: without the file, or for an issuer
+    # the file was not built for, the insider columns stay None rather than
+    # reading as "no insider bought".
+    path = os.path.join(DATA, "insider", "trades_%s.json" % universe_name)
+    if os.path.exists(path):
+        payload = json.load(open(path))
+        _WORKER["insider"] = payload["trades"]
+        _WORKER["insider_covered"] = set(payload["covered"])
+    else:
+        _WORKER["insider"], _WORKER["insider_covered"] = None, set()
     _WORKER["bench"] = prices(BENCHMARK)["closes"]
     _WORKER["rf"] = risk_free_series()
     _WORKER["dates"] = quarter_ends(start, end)
@@ -552,12 +535,13 @@ def _score_ticker(item):
     return ticker, rows, skips, None
 
 
-def run(universe, start=2013, end=2025, workers=None):
+def run(universe, start=2013, end=2025, workers=None, universe_name="sp500"):
     """Scores every ticker of `universe` ({ticker: {cik, intervals}})."""
     from multiprocessing import Pool
     rows, skips, unavailable = [], Counter(), {}
     workers = workers or max(1, (os.cpu_count() or 2) - 1)
-    with Pool(workers, initializer=_init_worker, initargs=(start, end)) as pool:
+    with Pool(workers, initializer=_init_worker,
+              initargs=(start, end, universe_name)) as pool:
         for i, (ticker, got, sk, err) in enumerate(
                 pool.imap_unordered(_score_ticker, sorted(universe.items())), 1):
             rows.extend(got)
@@ -1202,20 +1186,28 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--holdout", action="store_true",
                     help="also report the holdout window (logged)")
-    ap.add_argument("--universe", choices=("sp500", "legacy"), default="sp500",
-                    help="point-in-time S&P 500 members, or the original 53 names")
+    ap.add_argument("--universe", choices=("sp500", "midsmall", "legacy"),
+                    default="sp500",
+                    help="point-in-time S&P 500 members, S&P 400/600 members, "
+                         "or the original 53 names")
     args = ap.parse_args()
 
     if args.universe == "legacy":
         uni, unresolved = legacy_universe(), []
+    elif args.universe == "midsmall":
+        uni, unresolved, _ = U.midsmall_universe()
     else:
         uni, unresolved = U.backtest_universe()
     print("%s evreni: %d sirket (%d CIK cozulemedi)"
           % (args.universe, len(uni), len(unresolved)))
-    rows, skips, unavailable = run(uni)
+    rows, skips, unavailable = run(uni, universe_name=args.universe)
     if not rows:
         raise SystemExit("hic gozlem uretilmedi: %s" % skips)
-    json.dump(rows, open(os.path.join(DATA, "backtest_rows.json"), "w"))
+    # The product reads backtest_summary.json for its evidence lines, and
+    # that evidence is about S&P 500 members; other universes write to their
+    # own files so a research run never changes what the verdict cites.
+    suffix = "" if args.universe == "sp500" else "_" + args.universe
+    json.dump(rows, open(os.path.join(DATA, "backtest_rows%s.json" % suffix), "w"))
     payloads = {t: prices(U.yahoo_symbol(t)) for t in {r["ticker"] for r in rows}}
     segments = ("dev",)
     if args.holdout:
@@ -1228,6 +1220,6 @@ if __name__ == "__main__":
                      "unavailable": unavailable}
     if args.universe == "sp500":
         s["universe"]["membership"] = membership_coverage(rows)
-    json.dump(s, open(os.path.join(DATA, "backtest_summary.json"), "w"),
+    json.dump(s, open(os.path.join(DATA, "backtest_summary%s.json" % suffix), "w"),
               indent=1, ensure_ascii=False)
     _print(s)

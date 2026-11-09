@@ -121,9 +121,12 @@ def build(ciks, out_path=None):
                     [filed, _date(r["TRANS_DATE"]), code, shares, price, owners[acc]])
     for v in trades.values():
         v.sort()
+    # Issuers with no trades are absent from `trades`; `covered` tells them
+    # apart from issuers this file was never built for.
+    payload = {"covered": sorted(str(c) for c in ciks), "trades": trades}
     if out_path:
-        json.dump(trades, open(out_path, "w"))
-    return trades
+        json.dump(payload, open(out_path, "w"))
+    return payload
 
 
 def signal(trades, asof):
@@ -155,6 +158,14 @@ def signal(trades, asof):
 if __name__ == "__main__":
     got, missing = download()
     print("%d ceyrek indirildi, yayimlanmamis: %s" % (len(got), missing))
-    uni, _ = U.backtest_universe()
-    t = build([r["cik"] for r in uni.values()], os.path.join(DATA, "trades_sp500.json"))
-    print("%d sirket, %d islem" % (len(t), sum(len(v) for v in t.values())))
+    import sys
+    if "--midsmall" in sys.argv:
+        uni, _, _ = U.midsmall_universe()
+        name = "midsmall"
+    else:
+        uni, _ = U.backtest_universe()
+        name = "sp500"
+    p = build([r["cik"] for r in uni.values()], os.path.join(DATA, "trades_%s.json" % name))
+    print("%d sirket kapsandi, %d sirketin islemi var, %d islem"
+          % (len(p["covered"]), len(p["trades"]),
+             sum(len(v) for v in p["trades"].values())))

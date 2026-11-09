@@ -138,6 +138,36 @@ def risk_cell(volatility):
     return "high_vol" if volatility >= HIGH_VOLATILITY else "normal"
 
 
+ISSUANCE_BAND = 0.02     # +/-2% of shares a year
+
+
+def issuance_read(val):
+    """Net share issuance: the one accounting signal confirmed outside the
+    S&P 500 in this project's backtest. Companies issuing shares lagged and
+    net buyers led among S&P 400/600 members, in 2013-2019 and again in
+    2020-2025; among S&P 500 members it showed nothing."""
+    x = (val or {}).get("net_issuance")
+    if x is None:
+        return None
+    if x > ISSUANCE_BAND:
+        state, tone, reading = ("seyreltme", "warning",
+                                "Hisse sayısı bir yılda %%%.1f arttı." % (x * 100))
+    elif x < -ISSUANCE_BAND:
+        state, tone, reading = ("geri alım", "good",
+                                "Hisse sayısı bir yılda %%%.1f azaldı." % (-x * 100))
+    else:
+        state, tone, reading = ("nötr", "neutral",
+                                "Hisse sayısı bir yılda %%%+.1f değişti."
+                                % (round(x * 100, 1) + 0.0))
+    return {"name": "Net hisse ihracı (12 ay)", "value": x, "state": state,
+            "tone": tone, "reading": reading,
+            "evidence": ("Backtest: S&P 400/600 şirketlerinde hisse ihraç "
+                         "edenler sonraki 12 ayda geride kaldı (IC −0.049, t −2.5 "
+                         "2013-2019; −0.087, t −3.0 2020-2025). S&P 500 "
+                         "şirketlerinde etki görülmedi (IC −0.02); büyük "
+                         "şirketlerde bu okuma bilgi amaçlıdır.")}
+
+
 def fall_risk(val):
     """Measured base rate of a >25% fall over 12 months for companies like this.
 
@@ -745,7 +775,8 @@ def assess(pkg, val=None):
         "business_score": business_score,
         "pillars": pillars,
         "measured_signals": measured_signals(pkg) + [
-            s for s in [fair_value_read(val), fall_risk(val)] if s],
+            s for s in [fair_value_read(val), fall_risk(val),
+                        issuance_read(val)] if s],
         "next_quarter": next_quarter(pkg),
         "confidence": interpret.confidence(pkg),
         "basis": "Bu sonuc, knowledge/analysis-framework.md icindeki acikca "
