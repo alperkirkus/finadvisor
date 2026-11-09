@@ -10,6 +10,8 @@ the output: the discount rate, and the growth fade used in the forecast.
 Everything else comes from the evidence package or the quote.
 """
 import json
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -68,6 +70,31 @@ def quote(ticker):
             "source": "Yahoo Finance (resmi olmayan uc nokta)"}
 
 
+_TTL_SECONDS = 3600
+_ttl_store, _ttl_lock = {}, threading.Lock()
+
+
+def _ttl(fn):
+    """Remember a market fetch for an hour. A screen of 500 companies would
+    otherwise download the S&P 500 history and the 10-year yield 500 times;
+    an hour keeps a long-running API from serving a stale beta."""
+    def wrapped(*args):
+        key = (fn.__name__,) + args
+        now = time.time()
+        with _ttl_lock:
+            hit = _ttl_store.get(key)
+            if hit and now - hit[0] < _TTL_SECONDS:
+                return hit[1]
+        value = fn(*args)
+        if value is not None:
+            with _ttl_lock:
+                _ttl_store[key] = (now, value)
+        return value
+    wrapped.__name__ = fn.__name__
+    return wrapped
+
+
+@_ttl
 def _monthly_closes(symbol):
     req = urllib.request.Request(HISTORY_URL % symbol, headers={"User-Agent": UA})
     d = json.loads(urllib.request.urlopen(req, timeout=25).read())
@@ -127,6 +154,7 @@ def _regress_beta(stock, market):
     return {"beta": round(cov / var, 3), "months": len(shared)}
 
 
+@_ttl
 def risk_free_rate():
     try:
         req = urllib.request.Request(QUOTE_URL % TREASURY_10Y,

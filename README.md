@@ -68,10 +68,10 @@ different rule than the one it explains would be a second, hidden model.
 Blocked companies sink to the bottom whatever they score, and so does anything
 whose valuation rests on a large model-versus-market gap: the number may be
 right, but promoting it silently would be its own distortion. The universe is
-a fixed list of 53 large caps (`ranking.SCREEN_UNIVERSE`), not all 10,412
-filers and not the backtest's S&P 500 cache —
-scoring one needs a live quote and a beta regression, so the screen is built
-offline by `ranking.py` and served from a file.
+today's S&P 500 (`ranking.screen_universe`, from the Wikipedia constituents
+table), not all 10,412 filers — scoring one needs a live quote and a beta
+regression, so the screen is built offline by `ranking.py`, four companies
+at a time, and served from a file.
 
 `backtest.py` measures whether the signal predicts anything. The universe
 is the S&P 500 as it stood on each date: membership intervals come from the
@@ -106,13 +106,14 @@ against its own record while still clearing a generic threshold.
 Two further consequences of having the history. **Stability** is scored
 directly — the coefficient of variation of ROIC over the decade takes a
 quarter of the quality pillar, since durability is most of what quality means
-once the level is known. And the **accrual gate** is decisive rather than
-diluted: when the accrual ratio is above the framework's warning level *and*
-cash conversion confirms it, the verdict is blocked whatever the other
-pillars say. One weak reading is noise; both together is the pattern the
-accounting literature ties to later earnings disappointments, although this
-project's own backtest finds the accrual effect too weak to measure among
-large caps.
+once the level is known. The **accrual flag** — accrual ratio above the
+framework's warning level *and* cash conversion confirming it — is a warning,
+not a block: such a company can never be called investable, and its
+rationale says why, but it is not thrown out. It used to block outright on
+the strength of the first backtest; on S&P 500 members the accrual effect is
+not significant, and non-cash profit can be benign (Alphabet's includes
+unrealised investment gains), so a hard block was claiming more than the
+evidence holds.
 
 Component weights inside each pillar come from how reliable each measure is
 known to be, documented next to the weight in `verdict.py` — not fitted to
@@ -366,10 +367,11 @@ a trailing window happily reads ExxonMobil's 2020 trough as secular growth.
 Beta is floored at 0.50, since no listed equity is meaningfully less risky
 than half the market.
 
-The verdict is a decision rule, not an average. A failure in earnings
-quality or balance-sheet safety blocks the verdict outright, because a cheap
-price does not compensate for either, and the weakest pillar caps the
-composite so a strong dimension cannot hide a failing one.
+The verdict is a decision rule, not an average. A failure in balance-sheet
+safety or in business quality blocks the verdict outright, because a cheap
+price does not compensate for either, and the weakest of those pillars caps
+the composite so a strong dimension cannot hide a failing one. Weak earnings
+quality warns rather than blocks, for the reason above.
 
 Prices come from an unofficial Yahoo Finance endpoint — no key, no
 documented contract. `valuation.quote()` is the single function to replace

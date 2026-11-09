@@ -29,17 +29,9 @@ ORDER = {
 }
 
 
-# The screen's universe is fixed rather than "whatever filings are cached":
-# the backtest prefetches every S&P 500 member, and a screen that grew with
-# the cache would silently become a 600-name live-quote job.
-SCREEN_UNIVERSE = [
-    "AAPL", "ABBV", "ADBE", "AMZN", "AVGO", "AXP", "BA", "BAC", "BMY", "CAT",
-    "COP", "COST", "CRM", "CSCO", "CVX", "DIS", "DUK", "F", "GE", "GILD",
-    "GOOGL", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "LLY",
-    "MCD", "META", "MRK", "MSFT", "NEE", "NKE", "NVDA", "ORCL", "PEP", "PFE",
-    "PG", "QCOM", "SBUX", "T", "TGT", "TSLA", "TXN", "UNH", "UPS", "VZ",
-    "WFC", "WMT", "XOM",
-]
+# The screen ranks today's S&P 500 members. It used to rank "whatever
+# filings are cached", which silently grew when the backtest prefetched
+# history; an explicit index keeps its scope deliberate.
 
 
 def overall_score(business, price_score):
@@ -53,8 +45,17 @@ def overall_score(business, price_score):
     return round(business * 0.6 + price_score * 0.4, 1)
 
 
-def score(ticker):
-    pkg = report.build(ticker, quarters=40)
+def screen_universe():
+    """Today's S&P 500 members as {yahoo_symbol: cik}, from the Wikipedia
+    constituents table (CIK included, so delisted-from-the-SEC-map names
+    still resolve)."""
+    import universe as U
+    U._sec_contact()        # a member whose filings are not cached is fetched
+    return {U.yahoo_symbol(t): cik for t, cik in U.wikipedia_ciks().items()}
+
+
+def score(ticker, cik=None):
+    pkg = report.build(ticker, quarters=40, cik=cik)
     try:
         val = valuation_mod.value(pkg)
     except Exception:
@@ -90,17 +91,33 @@ def score(ticker):
     }
 
 
-def build(universe=None, verbose=True):
-    universe = universe or SCREEN_UNIVERSE
+def build(universe=None, verbose=True, workers=4):
+    """Scores every company of the screen, `workers` at a time.
+
+    `universe` is {ticker: cik or None}; by default today's S&P 500.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    universe = universe or screen_universe()
+    if isinstance(universe, (list, tuple)):
+        universe = {t: None for t in universe}
     rows, failed = [], []
-    for ticker in universe:
+
+    def one(item):
+        ticker, cik = item
         try:
-            rows.append(score(ticker))
+            return ticker, score(ticker, cik), None
         except Exception as exc:
-            failed.append((ticker, str(exc)))
+            return ticker, None, str(exc)
+
+    with ThreadPoolExecutor(workers) as pool:
+        results = list(pool.map(one, sorted(universe.items())))
+    for ticker, row, err in results:
+        if err:
+            failed.append((ticker, err))
             if verbose:
-                print("  %-6s atlandi: %s" % (ticker, exc))
+                print("  %-6s atlandi: %s" % (ticker, err))
             continue
+        rows.append(row)
         if verbose:
             r = rows[-1]
             print("  %-6s %-26s %s" % (r["ticker"], r["verdict"], r["overall"]))

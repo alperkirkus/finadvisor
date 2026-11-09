@@ -336,9 +336,8 @@ WEIGHTS = {
         "pb_premium": 0.60,
         "earnings_yield_vs_ke": 0.40,
     },
-    # Quality leads, but a failure in either of the other two blocks the
-    # verdict outright in `_decide`, so their weight here only shapes the
-    # composite among companies that already pass.
+    # Quality leads. A safety failure blocks in `_decide`; weak earnings
+    # quality only warns there, so its weight here is what it contributes.
     "business": {
         "Kalite": 0.40,
         "Güvenlik": 0.30,
@@ -778,7 +777,10 @@ def assess(pkg, val=None):
         bw = WEIGHTS["business"]
         total = sum(bw[k] for k in scored)
         weighted = sum(v * bw[k] for k, v in scored.items()) / total
-        business_score = round(min(weighted, min(scored.values()) + 20), 1)
+        # The weakest pillar caps the composite -- but only the pillars that
+        # can still block. Earnings quality is advisory now (see _decide).
+        capping = [v for k, v in scored.items() if k != "Kâr kalitesi"] or list(scored.values())
+        business_score = round(min(weighted, min(capping) + 20), 1)
     price_pillar = by_name["Değerleme"]
 
     label, rationale = _decide(pkg, business, business_score, price_pillar)
@@ -913,28 +915,37 @@ def _decide(pkg, business, business_score, price):
     if business_score is None:
         return "degerlendirilemez", "İşletme kalitesi hesaplanamadı."
 
-    # The accrual gate. This is the best-documented earnings-quality input
-    # (Sloan 1996; its sign holds in this project's backtest, its size does
-    # not reach significance among large caps), and diluting it into a pillar average lets a company with
-    # profits that are visibly not turning into cash pass on the strength of
-    # its balance sheet. When the accrual ratio is above the framework's
-    # warning level *and* cash conversion confirms it, that is decisive on
-    # its own -- one weak reading is noise, both together is not.
+    # Earnings quality warns, it no longer decides. The accrual gate used to
+    # block outright on the strength of a t = +4.24 cohort in the first
+    # 51-name backtest; on S&P 500 members the accrual effect is not
+    # significant (12-month IC -0.03, t -0.9), and a profit with non-cash
+    # components can be benign (unrealised investment gains, a receivables
+    # build in a boom). A warning keeps a company with this flag from being
+    # called investable and says why, without discarding the rest.
     m = pkg["latest_metrics"]
     accrual, conversion = m.get("accrual_ratio"), m.get("cash_conversion")
+    eq_note = None
     if (accrual is not None and conversion is not None
             and accrual > 0.05 and conversion < 0.8):
-        return "yatirim yapilamaz", (
-            "Kâr nakde dönmüyor: tahakkuk oranı %+.1f%% (uyarı eşiği %%5) ve "
-            "nakde dönüşüm %.2f. Bu ikisi birlikte, diğer sütunlar ne "
-            "derse desin bloke eder."
-            % (accrual * 100, conversion))
+        eq_note = ("Uyarı: kâr nakde tam dönmüyor -- tahakkuk oranı %+.1f%% "
+                   "(uyarı eşiği %%5), nakde dönüşüm %.2f."
+                   % (accrual * 100, conversion))
+    elif "Kâr kalitesi" in failing:
+        eq_note = ("Uyarı: kâr kalitesi zayıf; raporlanan kârın nakde dönüşü "
+                   "sınırlı.")
 
-    if "Kâr kalitesi" in failing:
-        return "yatirim yapilamaz", ("Kâr kalitesi eşiğin altında. Raporlanan "
-                                     "kâr nakde dönmüyorsa diğer her metrik "
-                                     "şüpheli hale gelir ve ucuz fiyat bunu "
-                                     "telafi etmez.")
+    label, rationale = _decide_rest(pkg, business, business_score, price, failing)
+    if eq_note:
+        if label == "yatirim yapilabilir":
+            label = "kosullu"
+            rationale = ("İşletme ve fiyat olumlu görünüyor, ama kâr kalitesi "
+                         "uyarısı varken yatırım yapılabilir denmedi. " + eq_note)
+        else:
+            rationale = rationale + " " + eq_note
+    return label, rationale
+
+
+def _decide_rest(pkg, business, business_score, price, failing):
     if "Güvenlik" in failing:
         return "yatirim yapilamaz", ("Bilanço güvenliği eşiğin altında. "
                                      "Finansman baskısı altındaki bir şirkette "
