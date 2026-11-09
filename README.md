@@ -203,6 +203,39 @@ utilities and REITs lack a sector valuation model (they mostly read
 "fiyatlanamaz"), a dozen companies whose debt tags cannot be read are not
 valued, and insurers are still valued with the bank model.
 
+### Price, trend and market regime (portfolio backtest)
+
+`strategy.py` adds what prices say to the verdict and tests rules fixed in
+advance, as a portfolio (monthly rebalance, 10 bp per side, daily Yahoo
+data for point-in-time S&P 500 members since 2004; 301 of 963 historical
+members have no Yahoo history, so the universe is survivorship-biased and
+the equal-weight benchmark built from the same names is the fair yardstick).
+Strategy A holds the 50 members in an uptrend (above their 200-day average)
+with the best 12-1 momentum and nearness to the 52-week high, and moves to
+T-bills when the S&P 500 is below its 200-day average. B adds the quality
+filter (business score >= 60, not blocked, volatility < 35%).
+
+| | 2006-2012 | 2013-2019 | 2020-2025 | 2006-2025 |
+|---|---|---|---|---|
+| A, CAGR / Sharpe / max drawdown | 9.3% / 0.81 / −9% | 9.1% / 0.88 / −11% | 6.8% / 0.36 / −18% | 8.5% / 0.66 / −18% |
+| B (A + quality) | — | 9.6% / 0.90 / −9% | 7.1% / 0.35 / −23% | — |
+| A without the regime switch | 1.7% / 0.09 / −51% | 10.7% / 0.92 / −14% | 9.4% / 0.45 / −21% | 7.1% / 0.43 / −51% |
+| Equal-weight universe | 6.8% / 0.35 / −54% | 15.0% / 1.18 / −14% | 11.1% / 0.51 / −27% | 10.9% / 0.60 / −54% |
+| SPY | 3.8% / 0.21 / −51% | 14.6% / 1.22 / −14% | 15.0% / 0.75 / −24% | 10.8% / 0.65 / −51% |
+
+The pre-registered test failed: A and B beat the equal-weight universe on
+Sharpe and drawdown in 2006-2012 but not in 2013-2019. Stock selection by
+trend and momentum lags the plain universe in every window (A without the
+switch), and the quality filter adds little. What did the work is the
+market-regime switch alone. Checked afterwards, and therefore exploratory:
+SPY held only while the S&P 500 is above its 200-day average (T-bills
+otherwise, 26 switches in 20 years) returned 10.4% a year against SPY's
+10.8%, at 10.1% volatility against 15.1%, Sharpe 0.87 against 0.65, worst
+drawdown −22% against −51%. That rule was published in 2007 (Faber), so most
+of this window is after its publication; it still costs return in steady
+bull markets, whipsaws in sideways ones, and is slow in fast crashes
+(2020: −22%).
+
 **Forward tracking.** With the holdout spent, the only clean test left is
 the future. `tracking.py snapshot` freezes the current screen with its
 prices into `tracking/` (kept in the repository, because a snapshot cannot
