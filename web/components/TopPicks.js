@@ -13,15 +13,26 @@ const TONE = {
 /* The same ordering the single-company view would produce, surfaced as a
    list. A screen ranked by a different rule than the one it explains would
    be a second, hidden model. */
+const PAGE = 10;
+
 export default function TopPicks({ onPick }) {
   const [d, setD] = useState(null);
+  const [more, setMore] = useState(false);
 
   useEffect(() => {
-    fetch("/api/ranking?limit=10")
+    fetch(`/api/ranking?limit=${PAGE}`)
       .then((r) => r.json())
       .then(setD)
       .catch(() => setD({ rows: [] }));
   }, []);
+
+  function showMore() {
+    setMore(true);
+    fetch(`/api/ranking?limit=${PAGE}&offset=${d.rows.length}`)
+      .then((r) => r.json())
+      .then((n) => setD((cur) => ({ ...cur, rows: [...cur.rows, ...n.rows] })))
+      .finally(() => setMore(false));
+  }
 
   if (!d) return <div className="small dim">Sıralama yükleniyor…</div>;
   if (!d.rows.length) {
@@ -30,13 +41,13 @@ export default function TopPicks({ onPick }) {
 
   return (
     <div className="section">
-      <div className="section-title">Algoritmaya göre ilk 10</div>
+      <div className="section-title">Algoritmaya göre sıralama</div>
       <div className="group">
         {d.rows.map((r, i) => {
           const t = TONE[r.verdict] || TONE["kosullu"];
           return (
             <button key={r.ticker} className="listbtn" onClick={() => onPick(r.ticker)}>
-              <span className="num dim" style={{ width: 20, fontSize: 14 }}>{i + 1}</span>
+              <span className="num dim" style={{ width: 28, fontSize: 14 }}>{i + 1}</span>
               <span style={{ flex: 1 }}>
                 <span className="row" style={{ gap: 8, alignItems: "baseline" }}>
                   <span style={{ fontWeight: 600, fontSize: 16 }}>{r.ticker}</span>
@@ -61,6 +72,14 @@ export default function TopPicks({ onPick }) {
             </button>
           );
         })}
+        {d.total > d.rows.length && (
+          <button className="listbtn more" onClick={showMore} disabled={more}>
+            {more ? "Yükleniyor…" : `Sonraki ${Math.min(PAGE, d.total - d.rows.length)} şirketi göster`}
+            <span className="dim" style={{ marginLeft: "auto", fontSize: 14 }}>
+              {d.rows.length} / {d.total}
+            </span>
+          </button>
+        )}
       </div>
       <div className="section-foot">
         {d.universe_size} şirket arasından, şirket sayfasıyla aynı kurallarla
