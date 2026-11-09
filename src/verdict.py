@@ -784,9 +784,9 @@ if __name__ == "__main__":
                  _money(val["market_cap"]), val["assumptions"]["wacc"] * 100,
                  val["cost_of_capital"].get("beta", "-")))
         if val["fair_value"]:
-            print("adil deger %s-%s (orta %s) | guvenlik payi %s"
+            print("adil deger %s-%s (baz %s) | guvenlik payi %s"
                   % (val["fair_value"]["low"], val["fair_value"]["high"],
-                     val["fair_value"]["mid"],
+                     val["fair_value"].get("base"),
                      ("%+.0f%%" % (val["margin_of_safety"] * 100))
                      if val["margin_of_safety"] is not None else "-"))
         ig = (val.get("dcf") or {}).get("implied_growth")

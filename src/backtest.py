@@ -105,19 +105,24 @@ PILLAR_KEYS = {"Kalite": "quality", "Güvenlik": "safety",
 # Data
 
 
-def prices(symbol, need_raw=False):
+def prices(symbol, need_raw=False, max_age_days=None):
     """Monthly closes as {YYYY-MM: close}, cached on disk.
 
     `closes` are dividend- and split-adjusted (total return); `raw` are
     split-adjusted only, which is what a market value needs -- a dividend
     adjustment lowers every past price and would understate past market caps.
-    A cache written before `raw` existed is refetched when `raw` is needed.
+    A cache written before `raw` existed is refetched when `raw` is needed,
+    and one older than `max_age_days` is refetched when that is given (live
+    valuation); the backtest leaves it None so a run never changes its data
+    midway.
     """
     os.makedirs(CACHE, exist_ok=True)
     path = os.path.join(CACHE, symbol.replace("%5E", "_") + ".json")
     if os.path.exists(path):
         payload = _legacy(json.load(open(path)))
-        if not need_raw or payload.get("raw"):
+        fresh = (max_age_days is None or
+                 time.time() - os.path.getmtime(path) <= max_age_days * 86400)
+        if fresh and (not need_raw or payload.get("raw")):
             return payload
     req = urllib.request.Request(PRICE_URL % symbol, headers={"User-Agent": UA})
     d = json.loads(urllib.request.urlopen(req, timeout=30).read())
@@ -238,16 +243,12 @@ def _french_monthly(text):
 
 
 def shares_at(facts, asof):
-    """Cover-page share count filed by `asof`, with its period end."""
-    node = facts["facts"].get("dei", {}).get("EntityCommonStockSharesOutstanding")
-    if not node:
+    """Latest share count filed by `asof`, with its period end."""
+    counts = edgar.share_counts(facts, asof)
+    if not counts:
         return None, None
-    rows = [e for e in node["units"].get("shares", [])
-            if e.get("form") in ("10-K", "10-Q") and e.get("filed", "9999") <= asof]
-    if not rows:
-        return None, None
-    row = max(rows, key=lambda e: e["end"])
-    return row["val"], row["end"]
+    end = max(counts)
+    return counts[end], end
 
 
 def add_months(month, n):
@@ -390,24 +391,19 @@ def _asset_growth(facts, asof):
 
 def _net_issuance(facts, asof, splits):
     """Log change in split-adjusted shares over roughly a year, filed by `asof`."""
-    node = facts["facts"].get("dei", {}).get("EntityCommonStockSharesOutstanding")
-    if not node:
+    counts = edgar.share_counts(facts, asof)
+    if not counts:
         return None
-    rows = [e for e in node["units"].get("shares", [])
-            if e.get("form") in ("10-K", "10-Q") and e.get("filed", "9999") <= asof
-            and e.get("val")]
-    if not rows:
-        return None
-    now = max(rows, key=lambda e: e["end"])
-    earlier = [e for e in rows if 330 <= _days_between(e["end"], now["end"]) <= 400]
+    now = max(counts)
+    earlier = [d for d in counts if 330 <= _days_between(d, now) <= 400]
     if not earlier:
         return None
-    then = max(earlier, key=lambda e: e["end"])
+    then = max(earlier)
 
-    def adjusted(e):
-        count = e["val"]
+    def adjusted(end):
+        count = counts[end]
         for sp in splits:
-            if sp["date"] > e["end"]:
+            if sp["date"] > end:
                 count *= sp["factor"]
         return count
     return math.log(adjusted(now) / adjusted(then))

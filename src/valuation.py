@@ -46,6 +46,7 @@ WACC_FALLBACK = {
     "real_estate": 0.070, "unknown": 0.085,
 }
 TERMINAL_GROWTH = 0.025
+LIVE_PRICE_MAX_AGE = 7     # days before a live run refetches the price history
 HORIZON = 10
 
 
@@ -192,15 +193,8 @@ def cost_of_capital(pkg, mcap, debt, market=None):
 
 def shares_outstanding(cik):
     """Share count from the cover page of the latest filing."""
-    facts = edgar.companyfacts(cik)
-    node = facts["facts"].get("dei", {}).get("EntityCommonStockSharesOutstanding")
-    if not node:
-        return None
-    entries = [e for e in node["units"].get("shares", [])
-               if e.get("form") in ("10-K", "10-Q")]
-    if not entries:
-        return None
-    return max(entries, key=lambda e: e["end"])["val"]
+    counts = edgar.share_counts(edgar.companyfacts(cik))
+    return counts[max(counts)] if counts else None
 
 
 def _dcf(fcf0, growth, wacc, years=HORIZON, terminal=TERMINAL_GROWTH):
@@ -244,23 +238,14 @@ def implied_growth(target_ev, fcf0, wacc):
 
 
 def shares_series(cik, asof=None):
-    """{period_end: share count} from the filing cover pages.
+    """{period_end: share count} from the filings (see edgar.share_counts).
 
     Buybacks make today's share count useless for a past period: Apple
     retired roughly 45% of its shares over this window, so pricing 2016 with
     the current count understates that year's market value by nearly half
     and inflates the premium the company appears to trade at now.
     """
-    facts = edgar.companyfacts(cik)
-    node = facts["facts"].get("dei", {}).get("EntityCommonStockSharesOutstanding")
-    if not node:
-        return {}
-    out = {}
-    for e in node["units"].get("shares", []):
-        if e.get("form") in ("10-K", "10-Q") and \
-                (asof is None or e.get("filed", "9999") <= asof):
-            out[e["end"]] = e["val"]
-    return out
+    return edgar.share_counts(edgar.companyfacts(cik), asof)
 
 
 def _nearest_shares(series, when, strict=False):
@@ -295,7 +280,10 @@ def historical_multiple(pkg, shares, asof=None):
 
     ticker = pkg["company"]["ticker"]
     try:
-        payload = backtest.prices(ticker, need_raw=True)
+        # Live runs refresh a cache older than a week; a point-in-time run
+        # only reads months up to its as-of date, so any cache will do.
+        payload = backtest.prices(ticker, need_raw=True,
+                                  max_age_days=None if asof else LIVE_PRICE_MAX_AGE)
     except Exception:
         return None
     # A market value needs the price as traded, adjusted for splits only.
@@ -577,7 +565,8 @@ def value(pkg, market=None):
     volatility = None
     try:
         import backtest
-        closes = backtest.prices(company["ticker"])["closes"]
+        closes = backtest.prices(company["ticker"], max_age_days=(
+            None if market else LIVE_PRICE_MAX_AGE))["closes"]
         end = market["asof"][:7] if market else max(closes)
         volatility = trailing_volatility(closes, end)
     except Exception:

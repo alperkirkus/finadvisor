@@ -160,7 +160,7 @@ export default function Verdict({ ticker, company, children }) {
           <div className="defs">
             <Def k="Adil değer aralığı"
                  v={v.fair_value ? `${v.fair_value.low} – ${v.fair_value.high}` : "—"}
-                 note={v.fair_value ? `orta ${v.fair_value.mid}` : "nakit akışı iskontosu uygulanamadı"} />
+                 note={v.fair_value ? `baz ${v.fair_value.base}` : "nakit akışı iskontosu uygulanamadı"} />
             <Def k="Güvenlik payı"
                  v={v.margin_of_safety == null ? "—" : pct(v.margin_of_safety, 0)}
                  tone={v.margin_of_safety == null ? null

@@ -233,6 +233,42 @@ def quarterly_flows(facts, chain, asof=None):
     return out
 
 
+# Share count sources, best first. The cover-page count is missing for some
+# multi-class filers (Alphabet, Meta report none) and stops being tagged by
+# others (Berkshire's ends in 2011), so a source is used only if its latest
+# count is recent; the balance-sheet count and the diluted weighted average
+# are undimensioned totals across classes.
+SHARE_CHAIN = [("dei", "EntityCommonStockSharesOutstanding"),
+               ("us-gaap", "CommonStockSharesOutstanding"),
+               ("us-gaap", "WeightedAverageNumberOfDilutedSharesOutstanding")]
+SHARE_MAX_AGE_DAYS = 400
+
+
+def share_counts(facts, asof=None):
+    """{period_end: shares} from the first fresh source in SHARE_CHAIN.
+
+    Only 10-K/10-Q values filed by `asof` count, and a source whose latest
+    value is more than SHARE_MAX_AGE_DAYS before `asof` (today when None) is
+    skipped. Empty when no source qualifies -- never a stale count.
+    """
+    from datetime import date
+    ref = asof or date.today().isoformat()
+    for taxonomy, tag in SHARE_CHAIN:
+        node = facts["facts"].get(taxonomy, {}).get(tag)
+        if not node:
+            continue
+        out = {}
+        for e in node["units"].get("shares", []):
+            if e.get("form") not in ("10-K", "10-Q") or not e.get("val"):
+                continue
+            if asof is not None and e.get("filed", "9999") > asof:
+                continue
+            out[e["end"]] = e["val"]
+        if out and _days(max(out), ref) <= SHARE_MAX_AGE_DAYS:
+            return out
+    return {}
+
+
 def annual_flows(facts, chain, asof=None):
     return {e: v for (s, e), v in _periods(facts, chain, asof).items()
             if 330 <= _days(s, e) <= 400}
