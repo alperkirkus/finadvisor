@@ -218,10 +218,10 @@ filter (business score >= 60, not blocked, volatility < 35%).
 
 | | 2006-2012 | 2013-2019 | 2020-2025 | 2006-2025 |
 |---|---|---|---|---|
-| A, CAGR / Sharpe / max drawdown | 9.3% / 0.81 / −9% | 9.1% / 0.88 / −11% | 6.8% / 0.36 / −18% | 8.5% / 0.66 / −18% |
+| A, CAGR / Sharpe / max drawdown | 9.1% / 0.80 / −9% | 9.0% / 0.88 / −11% | 7.1% / 0.39 / −17% | 8.5% / 0.67 / −17% |
 | B (A + quality) | — | 9.6% / 0.90 / −9% | 7.1% / 0.35 / −23% | — |
-| A without the regime switch | 1.7% / 0.09 / −51% | 10.7% / 0.92 / −14% | 9.4% / 0.45 / −21% | 7.1% / 0.43 / −51% |
-| Equal-weight universe | 6.8% / 0.35 / −54% | 15.0% / 1.18 / −14% | 11.1% / 0.51 / −27% | 10.9% / 0.60 / −54% |
+| A without the regime switch | 1.6% / 0.08 / −50% | 10.5% / 0.91 / −14% | 9.9% / 0.48 / −20% | 7.1% / 0.43 / −50% |
+| Equal-weight universe | 6.8% / 0.35 / −53% | 14.9% / 1.18 / −14% | 11.0% / 0.50 / −27% | 10.9% / 0.60 / −53% |
 | SPY | 3.8% / 0.21 / −51% | 14.6% / 1.22 / −14% | 15.0% / 0.75 / −24% | 10.8% / 0.65 / −51% |
 
 The pre-registered test failed: A and B beat the equal-weight universe on
@@ -230,9 +230,10 @@ trend and momentum lags the plain universe in every window (A without the
 switch), and the quality filter adds little. What did the work is the
 market-regime switch alone. Checked afterwards, and therefore exploratory:
 SPY held only while the S&P 500 is above its 200-day average (T-bills
-otherwise, 26 switches in 20 years) returned 10.4% a year against SPY's
-10.8%, at 10.1% volatility against 15.1%, Sharpe 0.87 against 0.65, worst
-drawdown −22% against −51%. That rule was published in 2007 (Faber), so most
+otherwise, 26 switches in 20 years, 10 bp per switch; `SPY_regime` in
+`strategy.py`) returned 10.3% a year against SPY's 10.8%, at 10.1%
+volatility against 15.1%, Sharpe 0.86 against 0.65, worst drawdown −22%
+against −51%. That rule was published in 2007 (Faber), so most
 of this window is after its publication; it still costs return in steady
 bull markets, whipsaws in sideways ones, and is slow in fast crashes
 (2020: −22%).
@@ -287,6 +288,49 @@ release, and measured from that date the signal is not significant in
 either window. Acting on the release itself would mean parsing the
 unstructured press release (EX-99.1). The signal is therefore documented,
 not shown in the product.
+
+### Survivorship, measured
+
+`survivorship.py` explains the 301 historical S&P 500 members with no Yahoo
+history, from free sources: Wikipedia's "Historical components of the S&P
+500" (removal date, name, reason) and SEC's every-name-ever CIK file. 21
+had only changed ticker (ABC is now COR, ANTM is ELV, UTX is RTX); a rename
+is accepted only when the new ticker is a current member whose "date added"
+predates the switch, or when the same CIK trades under a new ticker. Their
+histories are now read under the new ticker (`data/survivorship/aliases.json`).
+Of the 280 left, 126 were acquired, 37 dropped for size, 11 split or spun
+off, 19 failed while in the index (bankrupt, or seized by the FDIC: Lehman,
+WaMu, Ambac, SVB, First Republic, ...) and 87 have no removal record (mostly
+2005-2009).
+
+With the renamed members back, the portfolio results moved by at most half
+a point a year in one window and 0.1 over 2006-2025 (the table above is
+regenerated with them). As a pessimistic bound, the equal-weight universe with every
+failed member held to zero in its last month (`EW_failures`) returns 6.3%
+instead of 6.8% a year in 2006-2012 and 10.7% instead of 10.9% over
+2006-2025. Survivorship is therefore not what drives the price-based
+conclusions above. The 126 acquired names are still missing; takeover
+premiums make their absence, if anything, understate the universe.
+
+### Short interest (pre-registered, narrowly failed)
+
+`shorts.py` tests FINRA's free consolidated short interest (from 2018, one
+mid-month settlement a month, returns starting 14 days after settlement to
+cover publication). Signal: days to cover (short position / average daily
+volume, Hong et al. 2016), predicted negative.
+
+| Rank IC (t), 2018-2025 | 1 month | 3 months |
+|---|---|---|
+| S&P 500, days to cover | −0.016 (−1.9) | −0.023 (−2.2) |
+| mid/small, days to cover | −0.020 (−2.5) | −0.026 (−2.9) |
+| S&P 500, short / shares | −0.017 (−1.4) | −0.027 (−1.5) |
+| mid/small, short / shares | −0.022 (−1.8) | −0.037 (−2.1) |
+
+The criterion (1-month IC < 0 with |t| >= 2 in both universes) failed on
+the S&P 500 by a tenth of a t-statistic and is not relaxed after the fact.
+The sign is right in every cell and the 3-month result is significant in
+both universes; the most-shorted fifth trailed the least-shorted by about
+1-1.3 points over three months. It is documented, not shown as a signal.
 
 **Forward tracking.** With the holdout spent, the only clean test left is
 the future. `tracking.py snapshot` freezes the current screen with its

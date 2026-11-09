@@ -19,11 +19,11 @@ URL = ("https://query1.finance.yahoo.com/v8/finance/chart/%s"
        "?range=2y&interval=1d")
 UA = "Mozilla/5.0 (FinAdvisor research)"
 
-# Measured in strategy.py, 2006-2025, monthly check, T-bills when off.
+# strategy.py SPY_regime, 2006-2025, monthly check, 10 bp per switch, T-bills when off.
 # Exploratory: the rule was chosen after the pre-registered test (Phase 8).
 EVIDENCE = {
     "window": "2006-2025",
-    "with_rule": {"cagr": 0.104, "vol": 0.101, "sharpe": 0.87, "maxdd": -0.217},
+    "with_rule": {"cagr": 0.103, "vol": 0.101, "sharpe": 0.86, "maxdd": -0.222},
     "index": {"cagr": 0.108, "vol": 0.151, "sharpe": 0.65, "maxdd": -0.508},
     "switches": 26,
     "note": ("Keşif amaçlı: kural ön kayıtlı testten sonra seçildi. 2007'de "

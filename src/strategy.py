@@ -77,13 +77,39 @@ def fetch_one(symbol):
     return out
 
 
+ALIASES = os.path.join(DATA, "survivorship", "aliases.json")
+SURV_MAP = os.path.join(DATA, "survivorship", "map.json")
+
+
 def members_since(start="2005-01-01", end="2025-12-31"):
-    """{yahoo_symbol: intervals} for S&P 500 members at any point in the window."""
+    """{yahoo_symbol: intervals} for S&P 500 members at any point in the window.
+
+    A member that changed ticker (ABC is now COR) is read under its current
+    ticker, the same company by CIK; see survivorship.py.
+    """
+    aliases = json.load(open(ALIASES)) if os.path.exists(ALIASES) else {}
     out = {}
     for t, iv in U.membership().items():
         if any(s <= end and (e is None or e >= start) for s, e in iv):
-            out.setdefault(U.yahoo_symbol(t), []).extend(iv)
+            sym = U.yahoo_symbol(t)
+            out.setdefault(aliases.get(sym, sym), []).extend(iv)
     return out
+
+
+def failures():
+    """{membership end date: count} of members that failed while in the index
+    (bankrupt, or seized by the FDIC) and have no price history anywhere free."""
+    if not os.path.exists(SURV_MAP):
+        return {}
+    out = defaultdict(int)
+    for sym, r in json.load(open(SURV_MAP)).items():
+        if "recovered_as" in r or not r.get("membership_end"):
+            continue
+        reason = (r.get("reason") or "").lower()
+        if (r.get("class") == "bankruptcy" or (sym.endswith("Q") and len(sym) >= 4)
+                or "fdic" in reason):
+            out[r["membership_end"][:10]] += 1
+    return dict(out)
 
 
 def fetch_all(workers=4):
@@ -213,7 +239,9 @@ def run():
     quality = quality_rows()
     ends = month_ends(spy)
 
-    strategies = ["A", "A_no_regime", "B", "EW", "SPY"]
+    strategies = ["A", "A_no_regime", "B", "EW", "EW_failures", "SPY", "SPY_regime"]
+    failed = failures()
+    spy_on = None
     rets = {s: [] for s in strategies}
     held = {s: {} for s in ("A", "A_no_regime", "B")}
     turnover = {s: 0.0 for s in held}
@@ -244,7 +272,16 @@ def run():
         ew = sum(nxt[s] for s, _ in universe) / len(universe)
         i0, i1 = spy.at_or_before(d0), spy.at_or_before(d1)
         rets["EW"].append((month, ew, tb))
-        rets["SPY"].append((month, spy.adj[i1] / spy.adj[i0] - 1, tb))
+        # Pessimistic bound for the members that failed and left no prices:
+        # each is held at equal weight and goes to zero in its last month.
+        k = sum(n for day, n in failed.items() if d0 < day <= d1)
+        rets["EW_failures"].append((month, (ew * len(universe) - k) / (len(universe) + k), tb))
+        spy_ret = spy.adj[i1] / spy.adj[i0] - 1
+        rets["SPY"].append((month, spy_ret, tb))
+        # SPY while the index is above its 200-day average, T-bills otherwise.
+        switch = COST * (spy_on is not None and spy_on != regime_on)
+        rets["SPY_regime"].append((month, (spy_ret if regime_on else tb) - switch, tb))
+        spy_on = regime_on
 
         up = [(s, f) for s, f in universe if f["trend"]]
         score = {}
@@ -297,13 +334,14 @@ def stats(series, start, end):
 def report(rets, turnover, counts):
     names = {"A": "A: trend+momentum+rejim", "A_no_regime": "A, rejim filtresiz",
              "B": "B: A + kalite/risk filtresi", "EW": "Esit agirlikli evren",
-             "SPY": "SPY (S&P 500)"}
+             "EW_failures": "Esit agirlikli, batanlar -100%",
+             "SPY": "SPY (S&P 500)", "SPY_regime": "SPY + rejim (kesif)"}
     out = {}
     for label, a, b in WINDOWS + [("2006-2025", "2006-01", "2025-12")]:
         print("\n== %s ==" % label)
         print("  %-30s %8s %8s %7s %9s" % ("strateji", "CAGR", "oynak.", "Sharpe", "max dusus"))
         out[label] = {}
-        for k in ("A", "B", "A_no_regime", "EW", "SPY"):
+        for k in ("A", "B", "A_no_regime", "EW", "EW_failures", "SPY", "SPY_regime"):
             st = stats(rets[k], a, b)
             out[label][k] = st
             if st:
