@@ -18,13 +18,15 @@ TREND_KEYS = ["revenue_ttm", "net_income_ttm", "fcf_ttm", "ebitda_ttm",
               "interest_coverage", "cash_conversion"]
 
 
-def build(ticker, quarters=20, asof=None, facts=None):
+def build(ticker, quarters=20, asof=None, facts=None, cik=None):
     """Evidence package. `asof` reconstructs it as of a past date.
 
     `facts` lets a caller that builds many as-of packages for one company
-    load its companyfacts once instead of once per date.
+    load its companyfacts once instead of once per date; `cik` is for a
+    ticker the SEC ticker map no longer carries.
     """
-    cik, _ = edgar.resolve_cik(ticker)
+    if cik is None:
+        cik, _ = edgar.resolve_cik(ticker)
     prof = edgar.profile(cik)
     sec = edgar.sector(prof["sic"])
     if facts is None:

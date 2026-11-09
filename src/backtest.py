@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 
 import edgar
 import report
+import universe as U
 import valuation as V
 import verdict as VD
 
@@ -252,7 +253,7 @@ def quarter_ends(start_year, end_year):
 # One observation
 
 
-def signal(ticker, facts, asof, payload, bench, rf_series, skips):
+def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
     """The score the product would have shown on `asof`, plus what followed.
 
     Returns None and counts the reason in `skips` when the date cannot be
@@ -261,7 +262,7 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips):
     import ranking
 
     try:
-        pkg = report.build(ticker, quarters=40, asof=asof, facts=facts)
+        pkg = report.build(ticker, quarters=40, asof=asof, facts=facts, cik=cik)
     except ValueError:
         skips["no usable period"] += 1
         return None
@@ -333,36 +334,87 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips):
             "benchmark_forward": bench_forward}
 
 
-def run(universe=None, start=2013, end=2025):
-    universe = universe or UNIVERSE
-    bench = prices(BENCHMARK)["closes"]
-    rf_series = risk_free_series()
-    dates = quarter_ends(start, end)
-    rows, skips = [], Counter()
-
-    for ticker in universe:
+def legacy_universe():
+    """The original 53 names, scored on every date (no membership filter)."""
+    out = {}
+    for ticker in UNIVERSE:
         try:
-            cik, _ = edgar.resolve_cik(ticker)
-            facts = edgar.companyfacts(cik)
-            payload = prices(ticker, need_raw=True)
-        except Exception as exc:
-            print("  %s atlandi: %s" % (ticker, exc))
-            skips["ticker unavailable"] += 1
-            continue
-        count = 0
-        for asof in dates:
-            try:
-                row = signal(ticker, facts, asof, payload, bench, rf_series, skips)
-            except Exception as exc:
-                skips["error: %s" % type(exc).__name__] += 1
-                continue
-            if row:
-                rows.append(row)
-                count += 1
-        print("  %-6s %d gozlem" % (ticker, count))
+            out[ticker] = {"cik": edgar.resolve_cik(ticker)[0], "intervals": None}
+        except KeyError:
+            pass
+    return out
 
+
+_WORKER = {}
+
+
+def _init_worker(start, end):
+    _WORKER["bench"] = prices(BENCHMARK)["closes"]
+    _WORKER["rf"] = risk_free_series()
+    _WORKER["dates"] = quarter_ends(start, end)
+
+
+def _score_ticker(item):
+    """All as-of rows for one ticker; runs in a worker process."""
+    ticker, rec = item
+    skips = Counter()
+    try:
+        facts = edgar.companyfacts(rec["cik"])
+        payload = prices(U.yahoo_symbol(ticker), need_raw=True)
+    except Exception as exc:
+        skips["ticker unavailable"] += 1
+        return ticker, [], skips, "%s" % exc
+    rows = []
+    for asof in _WORKER["dates"]:
+        if rec["intervals"] is not None and not U.is_member(rec["intervals"], asof):
+            continue
+        try:
+            row = signal(ticker, facts, asof, payload, _WORKER["bench"],
+                         _WORKER["rf"], skips, cik=rec["cik"])
+        except Exception as exc:
+            skips["error: %s" % type(exc).__name__] += 1
+            continue
+        if row:
+            rows.append(row)
+    return ticker, rows, skips, None
+
+
+def run(universe, start=2013, end=2025, workers=None):
+    """Scores every ticker of `universe` ({ticker: {cik, intervals}})."""
+    from multiprocessing import Pool
+    rows, skips, unavailable = [], Counter(), {}
+    workers = workers or max(1, (os.cpu_count() or 2) - 1)
+    with Pool(workers, initializer=_init_worker, initargs=(start, end)) as pool:
+        for i, (ticker, got, sk, err) in enumerate(
+                pool.imap_unordered(_score_ticker, sorted(universe.items())), 1):
+            rows.extend(got)
+            skips.update(sk)
+            if err:
+                unavailable[ticker] = err
+            if i % 50 == 0 or i == len(universe):
+                print("  %d/%d sirket, %d gozlem" % (i, len(universe), len(rows)))
+    rows.sort(key=lambda r: (r["asof"], r["ticker"]))
     _add_excess(rows)
-    return rows, dict(skips)
+    return rows, dict(skips), unavailable
+
+
+def membership_coverage(rows, start=2013, end=2025):
+    """How many index members each date had, and how many were scored.
+
+    The gap is the survivorship this backtest cannot close: members with no
+    CIK, no price history or too little data on that date.
+    """
+    members = U.membership()
+    scored = Counter(r["asof"] for r in rows)
+    per_date = []
+    for asof in quarter_ends(start, end):
+        n = sum(1 for iv in members.values() if U.is_member(iv, asof))
+        per_date.append((asof, n, scored.get(asof, 0)))
+    avg_m = sum(n for _, n, _ in per_date) / len(per_date)
+    avg_s = sum(s for _, _, s in per_date) / len(per_date)
+    return {"avg_members": round(avg_m, 1), "avg_scored": round(avg_s, 1),
+            "scored_share": round(avg_s / avg_m, 3) if avg_m else None,
+            "first": per_date[0], "last": per_date[-1]}
 
 
 def _add_excess(rows):
@@ -488,6 +540,13 @@ def ic_stats(rows, key, h, seg):
                                / max(1, len(sections)), 1)}
 
 
+def _quintile_of(values):
+    """Quintile index per value from average ranks, so tied values share a
+    bucket and the result does not depend on row order."""
+    n = len(values)
+    return [min(QUINTILES - 1, int(r * QUINTILES / n)) for r in _avg_ranks(values)]
+
+
 def quintile_stats(rows, key, h, seg):
     sections = _cross_sections(rows, key, h, seg)
     buckets = defaultdict(list)
@@ -495,11 +554,11 @@ def quintile_stats(rows, key, h, seg):
     for pairs in sections.values():
         if len(pairs) < MIN_CROSS_SECTION:
             continue
-        pairs = sorted(pairs, key=lambda p: p[0])
-        n = len(pairs)
         groups = defaultdict(list)
-        for i, (_, y) in enumerate(pairs):
-            groups[i * QUINTILES // n].append(y)
+        for q, (_, y) in zip(_quintile_of([x for x, _ in pairs]), pairs):
+            groups[q].append(y)
+        if 0 not in groups or QUINTILES - 1 not in groups:
+            continue
         means = {q: sum(v) / len(v) for q, v in groups.items()}
         for q, v in means.items():
             buckets[q].append(v)
@@ -508,6 +567,7 @@ def quintile_stats(rows, key, h, seg):
     if not nw:
         return {"insufficient": True, "dates": len(spreads)}
     return {"quintile_mean_excess": [round(sum(buckets[q]) / len(buckets[q]), 4)
+                                     if buckets[q] else None
                                      for q in range(QUINTILES)],
             "top_minus_bottom": round(nw["mean"], 4),
             "nw_t": round(nw["t"], 2) if nw["t"] is not None else None,
@@ -528,10 +588,11 @@ def long_short_monthly(rows, key, payloads, hold=3):
     for month, group in sorted(by_month.items()):
         if len(group) < MIN_CROSS_SECTION:
             continue
-        group = sorted(group, key=lambda r: r[key])
-        n = len(group)
-        top = [r["ticker"] for i, r in enumerate(group) if i * QUINTILES // n == QUINTILES - 1]
-        bottom = [r["ticker"] for i, r in enumerate(group) if i * QUINTILES // n == 0]
+        qs = _quintile_of([r[key] for r in group])
+        top = [r["ticker"] for q, r in zip(qs, group) if q == QUINTILES - 1]
+        bottom = [r["ticker"] for q, r in zip(qs, group) if q == 0]
+        if not top or not bottom:
+            continue
         for step in range(1, hold + 1):
             m1, m0 = add_months(month, step), add_months(month, step - 1)
             legs = []
@@ -684,11 +745,12 @@ def summarise(rows, skips, payloads, ff, segments=("dev",)):
                   "reported": list(segments)},
         "ic": {}, "quintiles": {}, "factor": {},
         "biases": [
-            "Survivorship: evren bugun mevcut sirketlerden olusuyor; mutlak "
-            "getiriler yukari sapmali, ayni tarihteki karsilastirma gecerli.",
+            "Survivorship: sonradan satin alinan veya borsadan cikan uyelerin "
+            "cogunun CIK'i veya fiyati yok; mutlak getiriler yukari sapmali, "
+            "ayni tarihteki karsilastirma daha az etkilenir.",
             "Tek rejim: 2013-2025 ABD buyuk sermayeli boga piyasasi.",
-            "Kucuk kesit: tarih basina yaklasik 50 sirket; min_detectable_ic "
-            "bu evrenin olcebilecegi en kucuk etkiyi gosterir.",
+            "Kesit boyutu sinirli: min_detectable_ic bu evrenin "
+            "olcebilecegi en kucuk etkiyi gosterir.",
             "Islem maliyeti ve pozisyon buyuklugu modellenmedi.",
             "Legacy kohortlar butun yillari (holdout dahil) havuzluyor; "
             "karar icin ic/quintiles/factor bolumlerinin dev kismi kullanilir.",
@@ -735,6 +797,13 @@ def _print(s):
           % (s["valuation_coverage"] * 100, s["skipped"]))
     if s["valuation_errors"]:
         print("degerleme hatalari: %s" % s["valuation_errors"])
+    u = s.get("universe") or {}
+    if u.get("membership"):
+        m = u["membership"]
+        print("endeks uyeligi: tarih basina ort %.0f uye, %.0f skorlandi (%.0f%%); "
+              "%d uye CIK yok, %d fiyat/veri yok"
+              % (m["avg_members"], m["avg_scored"], m["scored_share"] * 100,
+                 u["unresolved_cik"], len(u["unavailable"])))
 
     for seg in s["split"]["reported"]:
         print("\n=== %s ===" % seg.upper())
@@ -760,7 +829,7 @@ def _print(s):
             if q.get("insufficient"):
                 continue
             print("  %-17s %s  Q5-Q1 %+6.2f%% t=%+.2f"
-                  % (k, " ".join("%+6.2f%%" % (v * 100)
+                  % (k, " ".join("%+6.2f%%" % (v * 100) if v is not None else "      -"
                                  for v in q["quintile_mean_excess"]),
                      q["top_minus_bottom"] * 100, q["nw_t"] or 0))
 
@@ -790,19 +859,32 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--holdout", action="store_true",
                     help="also report the holdout window (logged)")
+    ap.add_argument("--universe", choices=("sp500", "legacy"), default="sp500",
+                    help="point-in-time S&P 500 members, or the original 53 names")
     args = ap.parse_args()
 
-    rows, skips = run()
+    if args.universe == "legacy":
+        uni, unresolved = legacy_universe(), []
+    else:
+        uni, unresolved = U.backtest_universe()
+    print("%s evreni: %d sirket (%d CIK cozulemedi)"
+          % (args.universe, len(uni), len(unresolved)))
+    rows, skips, unavailable = run(uni)
     if not rows:
         raise SystemExit("hic gozlem uretilmedi: %s" % skips)
     json.dump(rows, open(os.path.join(DATA, "backtest_rows.json"), "w"))
-    payloads = {t: prices(t) for t in {r["ticker"] for r in rows}}
+    payloads = {t: prices(U.yahoo_symbol(t)) for t in {r["ticker"] for r in rows}}
     segments = ("dev",)
     if args.holdout:
         n = _log_holdout_look()
         print("\nHOLDOUT acildi (kayitli bakis #%d)" % n)
         segments = ("dev", "holdout")
     s = summarise(rows, skips, payloads, factors(), segments)
+    s["universe"] = {"name": args.universe, "companies": len(uni),
+                     "unresolved_cik": len(unresolved),
+                     "unavailable": unavailable}
+    if args.universe == "sp500":
+        s["universe"]["membership"] = membership_coverage(rows)
     json.dump(s, open(os.path.join(DATA, "backtest_summary.json"), "w"),
               indent=1, ensure_ascii=False)
     _print(s)
