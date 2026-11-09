@@ -139,7 +139,7 @@ export default function Verdict({ ticker, company, children }) {
           separate from the framework score rather than folded into it. */}
       {w.measured_signals?.length > 0 && (
         <div style={{ marginBottom: 40 }}>
-          <div className="label" style={{ marginBottom: 14 }}>Ölçülmüş sinyal</div>
+          <div className="label" style={{ marginBottom: 14 }}>Ölçülmüş sinyaller</div>
           {w.measured_signals.map((m) => (
             <div key={m.name} className={`note s-${m.tone}`} style={{ marginBottom: 18 }}>
               <div className="row" style={{ gap: 12, alignItems: "baseline" }}>

@@ -20,20 +20,77 @@ SUMMARY_PATH = os.path.join(os.path.dirname(__file__), "..", "data",
                             "backtest_summary.json")
 
 
+def _summary():
+    if not hasattr(_summary, "cache"):
+        try:
+            _summary.cache = json.load(open(SUMMARY_PATH))
+        except Exception:
+            _summary.cache = None
+    return _summary.cache
+
+
 def _backtest_stat(name):
     """Pulls one cohort's measured statistics from the saved backtest."""
-    if not hasattr(_backtest_stat, "cache"):
-        try:
-            _backtest_stat.cache = json.load(open(SUMMARY_PATH))
-        except Exception:
-            _backtest_stat.cache = None
-    summary = _backtest_stat.cache
+    summary = _summary()
     if not summary:
         return None
     for c in summary.get("cohorts", []):
         if c["name"] == name and not c.get("insufficient"):
             return c
     return None
+
+
+HIGH_VOLATILITY = 0.35
+
+
+def risk_cell(volatility):
+    """The risk group a company falls in; the backtest tabulates the same key.
+
+    Only a split whose elevated fall rate held in both the 2013-2019
+    development window and the 2020-2025 holdout is made: trailing annual
+    volatility of 35% or more (about 2.4x the universe rate, then 1.4x). A
+    weak business score did not hold up on its own (1.6x, then 1.0x) and
+    did not add consistently on top of volatility, so it is not used.
+    """
+    if volatility is None:
+        return None
+    return "high_vol" if volatility >= HIGH_VOLATILITY else "normal"
+
+
+def fall_risk(val):
+    """Measured base rate of a >25% fall over 12 months for companies like this.
+
+    The backtest's one finding that survived its holdout is about risk, not
+    return: high trailing volatility goes with more frequent large falls.
+    This reports the development-window rate for the company's group -- a
+    base rate, not a forecast.
+    """
+    vol = ((val or {}).get("volatility") or {}).get("annualized")
+    summary = _summary() or {}
+    table = summary.get("crash_table")
+    key = risk_cell(vol)
+    if key is None or not table:
+        return None
+    cell = table["cells"].get(key)
+    base = table.get("universe_rate")
+    if not cell or cell["n"] < 50 or not base:
+        return None
+    rate = cell["fall_25"]
+    state, tone, note = {
+        "normal": ("normal", "neutral", "Yüksek oynaklık işareti yok."),
+        "high_vol": ("yüksek", "critical",
+                     "Yüksek oynaklıklı şirketler 2020-2025 kontrol "
+                     "döneminde de evrenden sık düştü."),
+    }[key]
+    return {"name": "12 ayda %25+ düşüş riski", "value": rate,
+            "state": state, "tone": tone,
+            "reading": ("Son 12 ayın yıllık oynaklığı %%%.0f (%s itibarıyla)."
+                        % (vol * 100, val["volatility"]["through"])),
+            "evidence": ("Backtest'te (S&P 500, 2013-2019) bu gruptaki "
+                         "şirketlerde sonraki 12 ayda %%25'ten fazla düşüş "
+                         "oranı %%%.1f oldu; tüm evrende %%%.1f, n=%d. %s Bir "
+                         "taban oranıdır, bu şirket için tahmin değildir."
+                         % (rate * 100, base * 100, cell["n"], note))}
 
 
 def measured_signals(pkg):
@@ -533,7 +590,8 @@ def assess(pkg, val=None):
         "caveats": flags,
         "business_score": business_score,
         "pillars": pillars,
-        "measured_signals": measured_signals(pkg),
+        "measured_signals": measured_signals(pkg) + [
+            s for s in [fall_risk(val)] if s],
         "next_quarter": next_quarter(pkg),
         "confidence": interpret.confidence(pkg),
         "basis": "Bu sonuc, knowledge/analysis-framework.md icindeki acikca "
@@ -583,8 +641,8 @@ def _decide(pkg, business, business_score, price):
             and accrual > 0.05 and conversion < 0.8):
         return "yatirim yapilamaz", (
             "Kâr nakde dönmüyor: tahakkuk oranı %+.1f%% (uyarı eşiği %%5) ve "
-            "nakde dönüşüm %.2f. Bu ikisi birlikte, modelin ölçülmüş kanıta "
-            "sahip tek sinyalidir ve diğer sütunlar ne derse desin bloke eder."
+            "nakde dönüşüm %.2f. Bu ikisi birlikte, diğer sütunlar ne "
+            "derse desin bloke eder."
             % (accrual * 100, conversion))
 
     if "Kâr kalitesi" in failing:

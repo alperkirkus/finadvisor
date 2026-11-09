@@ -82,7 +82,8 @@ SIGNALS = ["overall", "business_score", "quality", "safety",
            "earnings_quality", "valuation", "accrual_ratio", "f_score",
            "fcf_yield", "roic",
            "gross_profitability", "asset_growth", "net_issuance", "momentum",
-           "earnings_yield", "multifactor"]
+           "earnings_yield", "multifactor", "sue", "revenue_surprise",
+           "volatility"]
 
 # Candidate signals from the literature, each with the sign its source
 # predicts. The composite averages their within-sector percentiles with
@@ -345,6 +346,7 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "verdict": a["verdict"],
             "overall": ranking.overall_score(a["business_score"],
                                              pillars.get("valuation")),
+            "volatility": (V.trailing_volatility(closes, month) or {}).get("annualized"),
             "business_score": a["business_score"],
             **{k: pillars.get(k) for k in PILLAR_KEYS.values()},
             "valuation_error": val_error,
@@ -357,6 +359,8 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "net_issuance": _net_issuance(facts, asof, payload["splits"]),
             "momentum": momentum,
             "earnings_yield": earnings_yield,
+            "sue": _surprise(facts, asof, "eps_diluted"),
+            "revenue_surprise": _surprise(facts, asof, "revenue"),
             "forward": forward,
             "benchmark_forward": bench_forward}
 
@@ -402,6 +406,44 @@ def _net_issuance(facts, asof, splits):
                 count *= sp["factor"]
         return count
     return math.log(adjusted(now) / adjusted(then))
+
+
+def _surprise(facts, asof, concept, history=8, min_history=6):
+    """Standardized unexpected value under a seasonal random walk.
+
+    (latest quarter - same quarter a year earlier) divided by the standard
+    deviation of that year-over-year change over the preceding quarters
+    (Foster, Olsen & Shevlin 1984; Bernard & Thomas 1989 for earnings,
+    Jegadeesh & Livnat 2006 for revenue). Only quarters filed by `asof`
+    are used, and a latest quarter older than five months is stale news
+    and gets no value.
+    """
+    q = edgar.quarterly_flows(facts, edgar.DURATION[concept], asof)
+    ends = sorted(q)
+    if not ends or _days_between(ends[-1], asof) > 150:
+        return None
+
+    def year_ago(end):
+        cands = [e for e in ends if 350 <= _days_between(e, end) <= 380]
+        return cands[-1] if cands else None
+
+    changes = []
+    for end in ends:
+        prior = year_ago(end)
+        if prior is not None:
+            changes.append((end, q[end] - q[prior]))
+    if len(changes) < min_history + 1 or changes[-1][0] != ends[-1]:
+        return None
+    latest = changes[-1][1]
+    past = [c for _, c in changes[-(history + 1):-1]]
+    if len(past) < min_history:
+        return None
+    mean = sum(past) / len(past)
+    sd = math.sqrt(sum((c - mean) ** 2 for c in past) / (len(past) - 1))
+    if not sd or not math.isfinite(sd):
+        return None
+    value = latest / sd
+    return value if math.isfinite(value) else None
 
 
 def add_composite(rows):
@@ -678,6 +720,75 @@ def _quintile_of(values):
     return [min(QUINTILES - 1, int(r * QUINTILES / n)) for r in _avg_ranks(values)]
 
 
+def _auc(scores, labels):
+    """P(score of a non-event > score of an event), ties counted half."""
+    ranks = _avg_ranks(scores)
+    n1 = sum(labels)
+    n0 = len(labels) - n1
+    if n0 == 0 or n1 == 0:
+        return None
+    r0 = sum(r + 1 for r, lab in zip(ranks, labels) if not lab)
+    return (r0 - n0 * (n0 + 1) / 2) / (n0 * n1)
+
+
+def crash_stats(rows, key, seg, h=HOLD_MONTHS):
+    """Does a higher signal mean fewer blow-ups?
+
+    Two events per date: the bottom decile of that date's excess return
+    (relative), and a 12-month fall of more than 25% (absolute). AUC above
+    0.5 means higher-signal names were less likely to have one. Dates with
+    fewer than three events are skipped.
+    """
+    out = {}
+    for name in ("bottom_decile", "fall_25"):
+        aucs = []
+        by_month = defaultdict(list)
+        for r in rows:
+            if segment(r["month"], h) != seg or r.get(key) is None:
+                continue
+            ex, fwd = (r.get("excess") or {}).get(h), r["forward"].get(h)
+            if ex is None or fwd is None:
+                continue
+            by_month[r["month"]].append((r[key], ex, fwd))
+        for group in by_month.values():
+            if len(group) < MIN_CROSS_SECTION:
+                continue
+            if name == "bottom_decile":
+                cut = sorted(g[1] for g in group)[len(group) // 10]
+                labels = [g[1] < cut for g in group]
+            else:
+                labels = [g[2] < -0.25 for g in group]
+            if sum(labels) < 3:
+                continue
+            auc = _auc([g[0] for g in group], labels)
+            if auc is not None:
+                aucs.append(auc - 0.5)
+        nw = newey_west(aucs, _lag(h))
+        out[name] = ({"auc": round(0.5 + nw["mean"], 3),
+                      "nw_t": round(nw["t"], 2) if nw["t"] is not None else None,
+                      "dates": nw["n"]} if nw else {"insufficient": True,
+                                                     "dates": len(aucs)})
+    return out
+
+
+def crash_table(rows, h=HOLD_MONTHS):
+    """Development-window base rates of a >25% fall, per risk cell."""
+    cells = defaultdict(list)
+    dev = [r for r in rows if segment(r["month"], h) == "dev"
+           and r["forward"].get(h) is not None]
+    for r in dev:
+        key = VD.risk_cell(r.get("volatility"))
+        if key:
+            cells[key].append(r["forward"][h] < -0.25)
+    total = [r["forward"][h] < -0.25 for r in dev]
+    return {"segment": "dev", "horizon_months": h,
+            "high_volatility": VD.HIGH_VOLATILITY,
+            "universe_rate": round(sum(total) / len(total), 4) if total else None,
+            "universe_n": len(total),
+            "cells": {k: {"n": len(v), "fall_25": round(sum(v) / len(v), 4)}
+                      for k, v in sorted(cells.items())}}
+
+
 def quintile_stats(rows, key, h, seg):
     sections = _cross_sections(rows, key, h, seg)
     buckets = defaultdict(list)
@@ -887,8 +998,11 @@ def summarise(rows, skips, payloads, ff, segments=("dev",)):
             "karar icin ic/quintiles/factor bolumlerinin dev kismi kullanilir.",
         ],
     }
+    out["crash_table"] = crash_table(rows)
     out["ic_sector_neutral"] = {}
+    out["crash"] = {}
     for seg in segments:
+        out["crash"][seg] = {k: crash_stats(rows, k, seg) for k in SIGNALS}
         out["ic"][seg] = {str(h): {k: ic_stats(rows, k, h, seg) for k in SIGNALS}
                           for h in HORIZONS}
         out["ic_sector_neutral"][seg] = {
@@ -898,7 +1012,8 @@ def summarise(rows, skips, payloads, ff, segments=("dev",)):
                                           for k in SIGNALS}
                                  for h in (3, HOLD_MONTHS)}
     for key in ("overall", "accrual_ratio", "multifactor", "gross_profitability",
-                "asset_growth", "net_issuance", "earnings_yield"):
+                "asset_growth", "net_issuance", "earnings_yield", "sue",
+                "revenue_surprise"):
         series = long_short_monthly(rows, key, payloads)
         for seg in segments:
             if seg == "dev":
@@ -967,6 +1082,15 @@ def _print(s):
                 c = s["ic_sector_neutral"][seg][str(h)][k]
                 cells.append("%16s" % ("-" if c.get("insufficient") else
                                        "%+.3f (%+.1f)" % (c["mean_ic"], c["nw_t"] or 0)))
+            print("  %-20s %s" % (k, " ".join(cells)))
+
+        print("\nCokus riski, 12 ay (AUC>0.5: yuksek sinyal = daha az cokus):")
+        print("  %-20s %18s %18s" % ("sinyal", "alt %10 (t)", "-%25 dusus (t)"))
+        for k in SIGNALS:
+            c = s["crash"][seg][k]
+            cells = ["%18s" % ("-" if c[n].get("insufficient") else
+                               "%.3f (%+.1f)" % (c[n]["auc"], c[n]["nw_t"] or 0))
+                     for n in ("bottom_decile", "fall_25")]
             print("  %-20s %s" % (k, " ".join(cells)))
 
         print("\nBeslik dilimler, 12 ay (Q1 dusuk sinyal -> Q5 yuksek):")

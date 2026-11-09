@@ -161,8 +161,32 @@ sample can detect, and the composite's alpha after the six factors is
 −0.59 on CMA, earnings yield +0.72 on HML, gross profitability +0.43 on
 RMW), so the signals are built correctly; among large US companies in
 2013-2019 they simply earned nothing beyond the factors they proxy. Nothing
-from this set is promoted into the verdict, and the holdout stays unopened
-until a candidate earns a look on the development window.
+from this set is promoted into the verdict. Earnings and revenue surprise
+(seasonal random walk, Foster, Olsen & Shevlin 1984; Jegadeesh & Livnat
+2006) fare no better: post-earnings drift is not visible among these names.
+
+What the system does carry is a read on **risk**. A higher business score
+goes with fewer large falls (12-month AUC for a drop of more than 25%:
+0.60 on the development window), and it holds among names of similar
+volatility (0.57) and in the 2020-2025 holdout (0.58, t = 3.0). The
+valuation pillar went the other way on the development window (0.43).
+
+That suggested a v2: order the screen by business score alone, and let a
+strong business at a merely *fair* price (valuation ≥ 40) count as
+investable. Its holdout criteria were written down before the one logged
+look at 2020-2025: fewer large falls among "investable" names, fewer in the
+screen's top quintile, and top-quintile return no more than 1pp worse. The
+first held (6.9% vs 7.2%), the second did not (8.4% vs 8.0%) — the valuation
+pillar's crash link did not repeat after 2019 — so v2 was not shipped and
+the rule and the screen are unchanged.
+
+What did ship is the part that held in both windows, reported rather than
+scored: each verdict now carries the trailing 12-month volatility and the
+development-window rate of large falls for its group. Names with annual
+volatility of 35% or more fell more than 25% over the next year 2.4 times
+as often as the universe in 2013-2019 and 1.4 times as often in 2020-2025;
+the rest fell 0.9 and 0.8 times as often. A weak business score on its own
+(1.6x, then 1.0x) did not survive the holdout and is not used for this.
 
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal

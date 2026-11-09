@@ -354,6 +354,30 @@ def historical_multiple(pkg, shares, asof=None):
             "span": [observations[0][0], observations[-1][0]]}
 
 
+def trailing_volatility(closes, end_month, months=12):
+    """Annualised volatility of the monthly returns ending at `end_month`.
+
+    `closes` is {YYYY-MM: adjusted close}. Needs ten of the twelve months.
+    """
+    rets = []
+    for i in range(months):
+        m1, m0 = _add_month(end_month, -i), _add_month(end_month, -i - 1)
+        if m1 in closes and m0 in closes and closes[m0]:
+            rets.append(closes[m1] / closes[m0] - 1)
+    if len(rets) < months - 2:
+        return None
+    mean = sum(rets) / len(rets)
+    sd = (sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)) ** 0.5
+    return {"annualized": round(sd * 12 ** 0.5, 4), "months": len(rets),
+            "through": end_month}
+
+
+def _add_month(month, n):
+    year, mon = int(month[:4]), int(month[5:7]) + n
+    year += (mon - 1) // 12
+    return "%04d-%02d" % (year, (mon - 1) % 12 + 1)
+
+
 def _month_after(date_str):
     year, month, _ = (int(x) for x in date_str.split("-"))
     month += 1
@@ -546,6 +570,15 @@ def value(pkg, market=None):
                          hist_mult["span"][0][:7], hist_mult["span"][-1][:7])),
         }
 
+    volatility = None
+    try:
+        import backtest
+        closes = backtest.prices(company["ticker"])["closes"]
+        end = market["asof"][:7] if market else max(closes)
+        volatility = trailing_volatility(closes, end)
+    except Exception:
+        volatility = None
+
     fair = _fair_range(dcf)
     headline = reversion["fair"] if reversion else base_value
     if fair and base_value is not None:
@@ -572,6 +605,7 @@ def value(pkg, market=None):
                                 "hesaplanır; risksiz oran 10 yıllık ABD "
                                 "tahvili, risk primi %4.5 varsayımıdır."},
         "dcf": dcf,
+        "volatility": volatility,
         "sensitivity": sensitivity,
         "reversion": reversion,
         "dcf_fair_value": fair,
