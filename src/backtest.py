@@ -85,7 +85,7 @@ SIGNALS = ["overall", "business_score", "quality", "safety",
            "gross_profitability", "asset_growth", "net_issuance", "momentum",
            "earnings_yield", "multifactor", "sue", "revenue_surprise",
            "volatility", "upside", "dcf_upside", "vd_upside",
-           "insider_buyers_6m", "insider_npr_12m"]
+           "insider_buyers_6m", "insider_npr_12m", "evidence"]
 
 # Candidate signals from the literature, each with the sign its source
 # predicts. The composite averages their within-sector percentiles with
@@ -99,6 +99,16 @@ LITERATURE_SIGNS = {
     "accrual_ratio": -1,         # Sloan (1996)
 }
 MIN_COMPONENTS = 3
+
+# Pre-registered 2026-11-09 (Phase 9): the signals whose literature sign and
+# 2013-2019 mid/small IC sign agree. Picked on dev, so only 2020-2025 tests it.
+EVIDENCE_SIGNS = {
+    "net_issuance": -1,          # Pontiff & Woodgate (2008)
+    "volatility": -1,            # Ang, Hodrick, Xing & Zhang (2006)
+    "roic": +1,                  # quality
+    "gross_profitability": +1,   # Novy-Marx (2013)
+    "revenue_surprise": +1,      # Jegadeesh & Livnat (2006)
+}
 PILLAR_KEYS = {"Kalite": "quality", "Güvenlik": "safety",
                "Kâr kalitesi": "earnings_quality", "Değerleme": "valuation"}
 
@@ -412,7 +422,7 @@ def _asset_growth(facts, asof):
     return series[now] / series[earlier[-1]] - 1
 
 
-def _surprise(facts, asof, concept, history=8, min_history=6):
+def _surprise(facts, asof, concept, history=8, min_history=6, target_end=None):
     """Standardized unexpected value under a seasonal random walk.
 
     (latest quarter - same quarter a year earlier) divided by the standard
@@ -424,7 +434,11 @@ def _surprise(facts, asof, concept, history=8, min_history=6):
     """
     q = edgar.quarterly_flows(facts, edgar.DURATION[concept], asof)
     ends = sorted(q)
-    if not ends or _days_between(ends[-1], asof) > 150:
+    if target_end is not None:
+        ends = [e for e in ends if e <= target_end]
+        if not ends or ends[-1] != target_end:
+            return None
+    elif not ends or _days_between(ends[-1], asof) > 150:
         return None
 
     def year_ago(end):
@@ -450,7 +464,7 @@ def _surprise(facts, asof, concept, history=8, min_history=6):
     return value if math.isfinite(value) else None
 
 
-def add_composite(rows):
+def add_composite(rows, signs=None, out_key="multifactor"):
     """Equal-weight average of the literature signals' within-sector percentiles.
 
     Percentiles are taken among the same date's names in the same sector
@@ -464,7 +478,7 @@ def add_composite(rows):
         by_month[r["month"]].append(r)
     for group in by_month.values():
         pct = defaultdict(dict)
-        for key, sign in LITERATURE_SIGNS.items():
+        for key, sign in (signs or LITERATURE_SIGNS).items():
             have = [r for r in group if r.get(key) is not None]
             sectors = defaultdict(list)
             for r in have:
@@ -480,7 +494,7 @@ def add_composite(rows):
                     pct[id(r)][key] = p if sign > 0 else 1 - p
         for r in group:
             parts = pct.get(id(r), {})
-            r["multifactor"] = (sum(parts.values()) / len(parts)
+            r[out_key] = (sum(parts.values()) / len(parts)
                                 if len(parts) >= MIN_COMPONENTS else None)
 
 
@@ -557,6 +571,7 @@ def run(universe, start=2013, end=2025, workers=None, universe_name="sp500"):
                 print("  %d/%d sirket, %d gozlem" % (i, len(universe), len(rows)))
     rows.sort(key=lambda r: (r["asof"], r["ticker"]))
     add_composite(rows)
+    add_composite(rows, EVIDENCE_SIGNS, "evidence")
     _add_excess(rows)
     return rows, dict(skips), unavailable
 
@@ -1087,7 +1102,7 @@ def summarise(rows, skips, payloads, ff, segments=("dev",)):
         out["quintiles"][seg] = {str(h): {k: quintile_stats(rows, k, h, seg)
                                           for k in SIGNALS}
                                  for h in (3, HOLD_MONTHS)}
-    for key in ("overall", "accrual_ratio", "multifactor", "gross_profitability",
+    for key in ("overall", "evidence", "accrual_ratio", "multifactor", "gross_profitability",
                 "asset_growth", "net_issuance", "earnings_yield", "sue",
                 "revenue_surprise"):
         series = long_short_monthly(rows, key, payloads)

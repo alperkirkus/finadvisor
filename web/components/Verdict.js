@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import MarketRegime from "./MarketRegime";
 
 const VERDICTS = {
   "yatirim yapilabilir":      { tone: "good",     g: "▲", label: "Yatırım yapılabilir" },
@@ -115,7 +116,8 @@ export default function Verdict({ ticker, company, children }) {
       <div className={`pill s-${vd.tone}`} style={{ marginBottom: 10 }}>
         <span aria-hidden="true" style={{ fontSize: 10 }}>{vd.g}</span>{vd.label}
       </div>
-      <div className="lead" style={{ marginBottom: 28, maxWidth: "60ch" }}>{w.rationale}</div>
+      <div className="lead" style={{ marginBottom: 8, maxWidth: "60ch" }}>{w.rationale}</div>
+      <div style={{ marginBottom: 28 }}><MarketRegime compact /></div>
 
       {w.summary?.length > 0 && (
         <div className="section">

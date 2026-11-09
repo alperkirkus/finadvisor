@@ -56,8 +56,9 @@ SEC EDGAR XBRL
       +-- verdict.py   four scored pillars -- quality, safety, earnings
       |                quality, valuation -- and an explicit investability
       |                verdict plus a next-quarter projection
+      +-- regime.py    S&P 500 against its 200-day average (market regime)
       +-- api.py       FastAPI: /api/company, /api/search, /api/interpret,
-                            /api/valuation, /api/analyze
+                            /api/valuation, /api/market, /api/analyze
                             |
                         web/  Next.js UI
 ```
@@ -235,6 +236,57 @@ drawdown −22% against −51%. That rule was published in 2007 (Faber), so most
 of this window is after its publication; it still costs return in steady
 bull markets, whipsaws in sideways ones, and is slow in fast crashes
 (2020: −22%).
+
+The switch is now in the product: `regime.py` reads the S&P 500 against its
+200-day average at the last month end (the tested rule) and today, served at
+`/api/market` and shown on the home page and on every company page, with the
+backtest above beside it.
+
+### Evidence composite (pre-registered, failed)
+
+Of the signals tested on mid/small caps in 2013-2019, five had the sign their
+literature predicts: low net issuance, low volatility, ROIC, gross
+profitability and revenue surprise. Their equal-weight within-sector
+percentile average (`evidence` in `backtest.py`) was fixed before it was
+computed; because the five were picked on dev, only 2020-2025 could test it.
+
+| 12-month rank IC (t) | 2013-2019 (picked here) | 2020-2025 (test) |
+|---|---|---|
+| mid/small | +0.094 (2.4) | +0.017 (0.4) |
+| S&P 500 | +0.052 (1.4) | +0.009 (0.2) |
+
+The criterion (mid/small IC > 0 with t >= 2 in 2020-2025) failed. By year
+the 2020-2025 IC is −0.20 in 2020 (the rally led by unprofitable, volatile
+names), +0.09 to +0.12 in 2021-2023, +0.06 in 2024 and −0.12 in 2025; the
+top quintile trailed the bottom. Of the components only net issuance held
+up out of sample (12-month IC −0.08 to −0.09, t −2.9, in both universes).
+The composite is therefore not shown in the product. One unplanned
+observation: as a crash indicator its AUC was 0.59-0.60 in both windows and
+both universes, slightly above the business score's.
+
+### Earnings surprise from the release date (pre-registered, passed on dev)
+
+The quarterly backtest found no earnings drift because it dates a quarter
+by its 10-Q and scores it at the next quarter end, after the drift.
+`earnings.py` dates each surprise by the company's 8-K Item 2.02 filing
+(after-hours releases move to the next trading day) and measures the
+60-trading-day return against SPY from that close.
+
+| SUE, rank IC (t) | 2013-2019 | 2020-2025 | Realizable (from the 10-Q), 2013-2019 / 2020-2025 |
+|---|---|---|---|
+| S&P 500 | +0.043 (2.6) | +0.023 (1.3) | +0.015 (0.9) / +0.012 (0.7) |
+| mid/small | +0.040 (2.9) | +0.008 (0.5) | +0.025 (1.6) / +0.008 (0.5) |
+
+The pre-registered criterion (IC > 0, t >= 2 in 2013-2019 in both
+universes) held: the drift exists when measured from the release. It is
+weaker in 2020-2025, as the literature on its decay predicts, and the
+top-minus-bottom quintile spread is about one percentage point over the 60
+days. It is also not something this system can act on: the surprise uses
+EPS from XBRL, which arrives with the 10-Q two to four weeks after the
+release, and measured from that date the signal is not significant in
+either window. Acting on the release itself would mean parsing the
+unstructured press release (EX-99.1). The signal is therefore documented,
+not shown in the product.
 
 **Forward tracking.** With the holdout spent, the only clean test left is
 the future. `tracking.py snapshot` freezes the current screen with its

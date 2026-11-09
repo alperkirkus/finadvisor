@@ -7,6 +7,7 @@ import Scores from "../components/Scores";
 import Trends from "../components/Trends";
 import MetricTable from "../components/MetricTable";
 import TopPicks from "../components/TopPicks";
+import MarketRegime from "../components/MarketRegime";
 
 function ThemeToggle() {
   const [theme, setTheme] = useState(null);
@@ -104,6 +105,7 @@ export default function Page() {
                 risk okuması. Her sayı şirketin kendi beyanından gelir.
               </div>
             </div>
+            <MarketRegime />
             <TopPicks onPick={open} />
           </>
         )}
