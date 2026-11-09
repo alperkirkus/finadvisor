@@ -42,6 +42,75 @@ def _backtest_stat(name):
 
 HIGH_VOLATILITY = 0.35
 
+# Fair-value upside bands; the backtest tabulates outcomes per band.
+UPSIDE_BANDS = [(-9.0, -0.30, "pahalı (−%30 altı)"),
+                (-0.30, -0.10, "biraz pahalı (−%30…−%10)"),
+                (-0.10, 0.10, "adil (±%10)"),
+                (0.10, 0.30, "ucuz (+%10…+%30)"),
+                (0.30, 9.0, "çok ucuz (+%30 üstü)")]
+FV_HORIZONS = (12, 24, 36)
+
+
+def upside_band(upside):
+    if upside is None:
+        return None
+    for lo, hi, name in UPSIDE_BANDS:
+        if lo <= upside < hi:
+            return name
+    return None
+
+
+def _horizon_label(cell):
+    """olumlu / olumsuz only when the band's excess return is both sizeable
+    and statistically distinguishable from zero; otherwise belirsiz."""
+    if not cell or cell.get("t") is None:
+        return "belirsiz"
+    if cell["mean_excess"] >= 0.02 and cell["t"] >= 2:
+        return "olumlu"
+    if cell["mean_excess"] <= -0.02 and cell["t"] <= -2:
+        return "olumsuz"
+    return "belirsiz"
+
+
+def fair_value_read(val):
+    """What happened, historically, after the system gave a target like this one.
+
+    The fair value is an estimate from the company's own history. This puts
+    next to it the measured record of such estimates: for S&P 500 members
+    whose upside fell in the same band, how often the price reached the
+    target within one, two and three years, and how they did against the
+    average member -- labelled olumlu or olumsuz only where the difference
+    is significant.
+    """
+    upside = (val or {}).get("upside_to_fair")
+    pvf = (val or {}).get("price_vs_fair")
+    table = (_summary() or {}).get("fair_value_table")
+    band = upside_band(upside)
+    if band is None or not pvf or not table or band not in table["bands"]:
+        return None
+    cells = table["bands"][band]
+    labels = {h: _horizon_label(cells.get(str(h))) for h in FV_HORIZONS}
+    final = labels[FV_HORIZONS[-1]]
+    tone = {"olumlu": "good", "olumsuz": "critical", "belirsiz": "neutral"}[final]
+    parts, hits = [], []
+    for h in FV_HORIZONS:
+        c = cells.get(str(h))
+        if not c:
+            continue
+        parts.append("%d yıl: %s (evrene göre %+.1f%%)"
+                     % (h // 12, labels[h], c["mean_excess"] * 100))
+        hits.append("%d yılda %%%.0f" % (h // 12, c["hit_rate"] * 100))
+    return {"name": "Adil değer hedefi", "value": upside,
+            "state": "3 yıl: %s" % final, "tone": tone,
+            "reading": ("Fiyat %.2f, adil değer %.2f (%s). Geçmişte bu bantta "
+                        "%s." % (pvf["price"], pvf["fair"], band, "; ".join(parts))),
+            "evidence": ("Backtest (S&P 500, %s): bu banttaki hedeflere ulaşma "
+                         "oranı %s; n=%d. Adil değer şirketin kendi geçmiş "
+                         "çarpanından türetilir ve ileriye dönük bilgi "
+                         "içermez -- ucuz bantlarda değer tuzağı riski "
+                         "budur." % (table["period"], ", ".join(hits),
+                                      cells[str(FV_HORIZONS[0])]["n"]))}
+
 
 def risk_cell(volatility):
     """The risk group a company falls in; the backtest tabulates the same key.
@@ -591,7 +660,7 @@ def assess(pkg, val=None):
         "business_score": business_score,
         "pillars": pillars,
         "measured_signals": measured_signals(pkg) + [
-            s for s in [fall_risk(val)] if s],
+            s for s in [fair_value_read(val), fall_risk(val)] if s],
         "next_quarter": next_quarter(pkg),
         "confidence": interpret.confidence(pkg),
         "basis": "Bu sonuc, knowledge/analysis-framework.md icindeki acikca "

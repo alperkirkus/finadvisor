@@ -188,6 +188,20 @@ as often as the universe in 2013-2019 and 1.4 times as often in 2020-2025;
 the rest fell 0.9 and 0.8 times as often. A weak business score on its own
 (1.6x, then 1.0x) did not survive the holdout and is not used for this.
 
+The fair value itself was tested the way it is meant to be used: price 85,
+fair value 100, buy? Over 2013-2025 the price reached a positive target
+within three years 30-57% of the time depending on the band, and the
+"cheap" bands did not beat the average member at one, two or three years —
+if anything they lagged (−5% over three years, not significant). The
+cheapest names relative to their own history were mostly businesses in
+structural decline (department stores, legacy hardware), whose past cash
+flow overstates their future: the value trap the textbooks warn about.
+None of seventeen candidate filters separated the traps from the
+recoveries consistently in both windows. Each verdict therefore shows its
+fair value next to that measured record — hit rate and excess return per
+horizon, labelled olumlu or olumsuz only where the difference is
+significant — instead of a bare buy signal.
+
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal
 year, the balance sheet identity, sign conventions and period continuity

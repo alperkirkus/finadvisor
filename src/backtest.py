@@ -776,6 +776,41 @@ def crash_stats(rows, key, seg, h=HOLD_MONTHS):
     return out
 
 
+def fair_value_table(rows):
+    """Outcomes after each fair-value upside band, at 1, 2 and 3 years.
+
+    Descriptive base rates for the product, so every as-of date with a
+    complete forward window is used (2013 onward, including the 2020+
+    window the v2 holdout test already opened). Hit rate: the price moved at
+    least as far as the target implied, in the target's direction.
+    """
+    out = {}
+    for lo, hi, name in VD.UPSIDE_BANDS:
+        cells = {}
+        for h in VD.FV_HORIZONS:
+            sel = [r for r in rows if r.get("upside") is not None
+                   and lo <= r["upside"] < hi and h in r["forward"]
+                   and h in (r.get("excess") or {})]
+            if len(sel) < 50:
+                continue
+            by_month = defaultdict(list)
+            for r in sel:
+                by_month[r["month"]].append(r["excess"][h])
+            nw = newey_west([sum(v) / len(v) for v in by_month.values()], _lag(h))
+            hit = [(r["forward"][h] >= r["upside"]) if r["upside"] >= 0
+                   else (r["forward"][h] <= r["upside"]) for r in sel]
+            raw = sorted(r["forward"][h] for r in sel)
+            cells[str(h)] = {"n": len(sel),
+                             "hit_rate": round(sum(hit) / len(hit), 3),
+                             "mean_excess": round(nw["mean"], 4) if nw else None,
+                             "t": round(nw["t"], 2) if nw and nw["t"] is not None else None,
+                             "median_return": round(raw[len(raw) // 2], 4)}
+        out[name] = cells
+    months = [r["month"] for r in rows if r.get("upside") is not None]
+    return {"period": "%s–%s" % (min(months)[:4], max(months)[:4]) if months else None,
+            "bands": out}
+
+
 def crash_table(rows, h=HOLD_MONTHS):
     """Development-window base rates of a >25% fall, per risk cell."""
     cells = defaultdict(list)
@@ -1004,6 +1039,7 @@ def summarise(rows, skips, payloads, ff, segments=("dev",)):
         ],
     }
     out["crash_table"] = crash_table(rows)
+    out["fair_value_table"] = fair_value_table(rows)
     out["ic_sector_neutral"] = {}
     out["crash"] = {}
     for seg in segments:
