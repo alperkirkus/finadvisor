@@ -10,7 +10,8 @@ import sys
 import edgar
 import metrics as M
 
-TREND_KEYS = ["revenue_ttm", "net_income_ttm", "fcf_ttm", "ebitda_ttm",
+TREND_KEYS = ["revenue_ttm", "net_income_ttm", "fcf_ttm", "fcff_ttm",
+              "fcff_margin", "ebitda_ttm",
               "net_debt",
               "gross_margin", "operating_margin", "net_margin",
               "fcf_margin", "roe", "roic", "accrual_ratio", "current_ratio",
@@ -18,18 +19,32 @@ TREND_KEYS = ["revenue_ttm", "net_income_ttm", "fcf_ttm", "ebitda_ttm",
               "interest_coverage", "cash_conversion"]
 
 
-def build(ticker, quarters=20, asof=None):
-    """Evidence package. `asof` reconstructs it as of a past date."""
-    cik, _ = edgar.resolve_cik(ticker)
+def build(ticker, quarters=20, asof=None, facts=None, cik=None):
+    """Evidence package. `asof` reconstructs it as of a past date.
+
+    `facts` lets a caller that builds many as-of packages for one company
+    load its companyfacts once instead of once per date; `cik` is for a
+    ticker the SEC ticker map no longer carries.
+    """
+    if cik is None:
+        cik, _ = edgar.resolve_cik(ticker)
     prof = edgar.profile(cik)
     sec = edgar.sector(prof["sic"])
-    panel = edgar.panel(edgar.companyfacts(cik), asof)
+    if facts is None:
+        facts = edgar.companyfacts(cik)
+    panel = edgar.panel(facts, asof)
     hist = M.history(panel, sec, quarters)
     if not hist:
         # A normal exception, not SystemExit: callers that score a universe
         # catch Exception, and SystemExit slips past that and kills the run.
         raise ValueError("%s: kullanilabilir donem yok" % ticker)
     latest = hist[-1]
+    # The latest period with both a balance sheet and revenue can trail the
+    # latest balance sheet by years when a filer changes its revenue tag;
+    # the package then describes the past as if it were current. The lag is
+    # carried so the verdict can refuse to read a stale package.
+    balance_dates = [d for d in panel if "assets" in panel[d]]
+    latest_balance = max(balance_dates) if balance_dates else latest["date"]
 
     trends = {}
     for k in TREND_KEYS:
@@ -47,6 +62,8 @@ def build(ticker, quarters=20, asof=None):
                     "sic": prof["sic"], "industry": prof["industry"],
                     "sector_bucket": sec},
         "as_of": latest["date"],
+        "latest_balance_date": latest_balance,
+        "stale_days": edgar._days(latest["date"], latest_balance),
         "knowledge_cutoff": asof,
         "periods_available": len(panel),
         "data_coverage": latest["coverage"],
@@ -55,6 +72,7 @@ def build(ticker, quarters=20, asof=None):
         "latest_metrics": latest["metrics"],
         "equity_negative": latest["notes"].get("equity_negative", False),
         "equity_thin": latest["notes"].get("equity_thin", False),
+        "debt_unknown": latest["notes"].get("debt_unknown", False),
         "scores": latest["scores"],
         "trends": trends,
         "source": "SEC EDGAR XBRL companyfacts, forms 10-K/10-Q",

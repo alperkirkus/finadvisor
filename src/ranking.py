@@ -9,7 +9,6 @@ import os
 import time
 
 import backtest
-import edgar
 import report
 import valuation as valuation_mod
 import verdict as verdict_mod
@@ -20,9 +19,9 @@ OUTPUT = os.path.join(os.path.dirname(__file__), "..", "data", "ranking.json")
 # promoted regardless of how it scores elsewhere.
 ORDER = {
     "yatirim yapilabilir": 0,
-    "ucuz ama sorunlu": 1,
-    "kosullu": 2,
-    "iyi sirket, pahali fiyat": 3,
+    "kosullu": 1,
+    "iyi sirket, pahali fiyat": 2,
+    "ucuz ama sorunlu": 3,      # the value-trap bucket: weak business, cheap price
     "fiyatlanamaz": 4,
     "fiyat verisi yok": 5,
     "degerlendirilemez": 6,
@@ -30,23 +29,34 @@ ORDER = {
 }
 
 
-def cached_universe():
-    """Tickers whose filings are already on disk -- no download to rank them."""
-    ciks = set()
-    for name in os.listdir(os.path.join(edgar.CACHE)):
-        if name.startswith("facts_") and name.endswith(".json"):
-            ciks.add(int(name[len("facts_"):-len(".json")]))
-    table = json.load(open(os.path.join(edgar.CACHE, "tickers.json")))
-    out = []
-    for row in table.values():
-        if row["cik_str"] in ciks:
-            out.append(row["ticker"])
-            ciks.discard(row["cik_str"])
-    return out
+# The screen ranks today's S&P 500 members. It used to rank "whatever
+# filings are cached", which silently grew when the backtest prefetched
+# history; an explicit index keeps its scope deliberate.
 
 
-def score(ticker):
-    pkg = report.build(ticker, quarters=40)
+def overall_score(business, price_score):
+    """The number the screen orders by; the backtest scores the same one."""
+    # Quality carries more than price, but a screen that ignored price would
+    # just list the largest good companies at any valuation.
+    if business is None:
+        return None
+    if price_score is None:
+        return round(business * 0.75, 1)
+    return round(business * 0.6 + price_score * 0.4, 1)
+
+
+def screen_universe():
+    """Today's S&P 500 members as {yahoo_symbol: cik}, from the Wikipedia
+    constituents table (CIK included, so delisted-from-the-SEC-map names
+    still resolve)."""
+    import universe as U
+    U._sec_contact()        # a member whose filings are not cached is fetched
+    wiki = U.wikipedia_ciks()
+    return {U.yahoo_symbol(t): U.resolve(t, wiki) for t in wiki}
+
+
+def score(ticker, cik=None):
+    pkg = report.build(ticker, quarters=40, cik=cik)
     try:
         val = valuation_mod.value(pkg)
     except Exception:
@@ -55,15 +65,7 @@ def score(ticker):
     pillars = {p["name"]: p["score"] for p in a["pillars"]}
     business = a["business_score"]
     price_score = pillars.get("Değerleme")
-
-    # Quality carries more than price, but a screen that ignored price would
-    # just list the largest good companies at any valuation.
-    if business is None:
-        overall = None
-    elif price_score is None:
-        overall = round(business * 0.75, 1)
-    else:
-        overall = round(business * 0.6 + price_score * 0.4, 1)
+    overall = overall_score(business, price_score)
 
     # A large model-versus-market gap is exactly what the single-company view
     # warns about, so the screen must not promote a company on the strength
@@ -90,17 +92,33 @@ def score(ticker):
     }
 
 
-def build(universe=None, verbose=True):
-    universe = universe or cached_universe()
+def build(universe=None, verbose=True, workers=4):
+    """Scores every company of the screen, `workers` at a time.
+
+    `universe` is {ticker: cik or None}; by default today's S&P 500.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    universe = universe or screen_universe()
+    if isinstance(universe, (list, tuple)):
+        universe = {t: None for t in universe}
     rows, failed = [], []
-    for ticker in universe:
+
+    def one(item):
+        ticker, cik = item
         try:
-            rows.append(score(ticker))
+            return ticker, score(ticker, cik), None
         except Exception as exc:
-            failed.append((ticker, str(exc)))
+            return ticker, None, str(exc)
+
+    with ThreadPoolExecutor(workers) as pool:
+        results = list(pool.map(one, sorted(universe.items())))
+    for ticker, row, err in results:
+        if err:
+            failed.append((ticker, err))
             if verbose:
-                print("  %-6s atlandi: %s" % (ticker, exc))
+                print("  %-6s atlandi: %s" % (ticker, err))
             continue
+        rows.append(row)
         if verbose:
             r = rows[-1]
             print("  %-6s %-26s %s" % (r["ticker"], r["verdict"], r["overall"]))

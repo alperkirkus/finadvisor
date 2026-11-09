@@ -17,6 +17,7 @@ import edgar
 import interpret
 import report
 import ranking as ranking_mod
+import regime
 import valuation as valuation_mod
 import verdict as verdict_mod
 
@@ -129,7 +130,7 @@ def interpretation(ticker: str, quarters: int = 20):
 
 
 @app.get("/api/ranking")
-def ranking(limit: int = 10):
+def ranking(limit: int = 10, offset: int = 0):
     """Best-scoring companies from the precomputed screen.
 
     The ranking is built offline by `ranking.py` because scoring a universe
@@ -142,9 +143,21 @@ def ranking(limit: int = 10):
         return {"rows": [], "generated_at": None,
                 "note": "siralama henuz olusturulmadi: python src/ranking.py"}
     limit = max(1, min(limit, 50))
+    offset = max(0, offset)
     return {"generated_at": payload["generated_at"],
             "universe_size": payload["universe_size"],
-            "rows": payload["rows"][:limit]}
+            "total": len(payload["rows"]),
+            "offset": offset,
+            "rows": payload["rows"][offset:offset + limit]}
+
+
+@app.get("/api/market")
+def market():
+    """S&P 500 against its 200-day average, with the backtest behind the rule."""
+    try:
+        return regime.read()
+    except Exception as exc:
+        raise HTTPException(503, "piyasa verisi alinamadi: %s" % exc)
 
 
 @app.get("/api/valuation/{ticker}")

@@ -8,7 +8,13 @@ Scores implemented: Piotroski F-Score (quality), Altman Z''-Score (distress),
 Beneish M-Score (earnings manipulation), plus the standard ratio set.
 """
 
+from datetime import date as _date
+
 TTM = 4  # quarters
+
+
+def _days(a, b):
+    return (_date.fromisoformat(b) - _date.fromisoformat(a)).days
 
 
 def _sum(panel, dates, key):
@@ -23,15 +29,27 @@ def _div(a, b):
 
 
 def ttm(panel, date, key, n=TTM):
-    """Trailing-n-quarter sum of a flow item ending at `date`."""
-    dates = sorted(panel)
-    i = dates.index(date)
-    if i + 1 < n:
+    """Trailing-n-quarter sum of a flow item ending at `date`.
+
+    The window is the last n quarters that carry the item, and they must be
+    consecutive -- spanning about (n - 1) quarters of calendar time. Counting
+    panel rows instead let a stray off-quarter date (an acquisition-date
+    goodwill balance, say) into the window and blanked every trailing figure
+    of the company.
+    """
+    if panel.get(date, {}).get(key) is None:
         return None
-    return _sum(panel, dates[i - n + 1:i + 1], key)
+    dates = [d for d in sorted(panel) if d <= date and panel[d].get(key) is not None]
+    window = dates[-n:]
+    if len(window) < n:
+        return None
+    span = _days(window[0], window[-1])
+    if not (n - 1) * 80 <= span <= (n - 1) * 100:
+        return None
+    return sum(panel[d][key] for d in window)
 
 
-def snapshot(panel, date):
+def snapshot(panel, date, sec=None):
     """All ratios for one period: TTM flows over point-in-time balances."""
     r = panel[date]
     g = r.get
@@ -44,14 +62,22 @@ def snapshot(panel, date):
     tax = ttm(panel, date, "tax")
     pretax = ttm(panel, date, "pretax_income")
     interest = ttm(panel, date, "interest_expense")
+    if op is None and pretax is not None:
+        # EBIT = pretax income + interest expense. For a lender, interest is
+        # its cost of goods and pretax income is the operating line.
+        if sec == "financial" or interest is None:
+            op = pretax         # EBT: understates EBIT by the unknown interest
+        else:
+            op = pretax + abs(interest)
     dep = ttm(panel, date, "depreciation")
 
     gross = (rev - cogs) if (rev is not None and cogs is not None) else ttm(panel, date, "gross_profit")
     fcf = (cfo - capex) if (cfo is not None and capex is not None) else None
+    sbc = ttm(panel, date, "sbc")
     ebitda = (op + dep) if (op is not None and dep is not None) else None
-    debt = (g("debt_current") or 0) + (g("debt_noncurrent") or 0)
+    debt, debt_unknown = _total_debt(g, interest, rev)
     cash_eq = (g("cash") or 0) + (g("short_term_investments") or 0)
-    net_debt = debt - cash_eq
+    net_debt = debt - cash_eq if debt is not None else None
     wc = _sub(g("current_assets"), g("current_liabilities"))
     # Not every filer tags a pretax total -- some publish only the domestic
     # and foreign components, which must never be summed as if either were
@@ -60,8 +86,18 @@ def snapshot(panel, date):
     if pretax is None and ni is not None and tax is not None:
         pretax = ni + tax
     tax_rate = _div(tax, pretax)
-    invested = _add(g("equity"), debt) if g("equity") is not None else None
+    invested = (_add(g("equity"), debt)
+                if g("equity") is not None and debt is not None else None)
     nopat = op * (1 - tax_rate) if (op is not None and tax_rate is not None) else None
+    # Free cash flow to the firm, the flow a WACC discounts (Damodaran ch.
+    # 15; Koller ch. 8). CFO under US GAAP is after interest, so after-tax
+    # interest is added back -- otherwise interest is paid twice, once in the
+    # flow and once through the net debt subtracted from enterprise value --
+    # and stock-based compensation, a real cost that CFO adds back, is
+    # deducted.
+    t = tax_rate if tax_rate is not None and 0 <= tax_rate <= 0.35 else 0.21
+    fcff = (cfo + abs(interest or 0) * (1 - t) - capex - (sbc or 0)
+            if (cfo is not None and capex is not None) else None)
 
     # Sustained buybacks push book equity to zero or below at a lot of mature
     # US companies. Once it does, any ratio with equity in the denominator
@@ -83,6 +119,7 @@ def snapshot(panel, date):
         "operating_margin": _div(op, rev),
         "net_margin": _div(ni, rev),
         "fcf_margin": _div(fcf, rev),
+        "fcff_ttm": fcff, "fcff_margin": _div(fcff, rev),
         "roe": _div(ni, equity) if equity_usable else None,
         "equity_to_assets": eq_to_assets,
         "roa": _div(ni, g("assets")),
@@ -100,6 +137,7 @@ def snapshot(panel, date):
         "cash_conversion": _div(cfo, ni),
     }
 
+    m["_debt_unknown"] = debt_unknown
     m["_equity_negative"] = not equity_usable
     m["_equity_thin"] = equity_thin
 
@@ -109,6 +147,42 @@ def snapshot(panel, date):
         m["net_income_growth_yoy"] = _growth(ttm(panel, prior, "net_income"), ni)
         m["fcf_growth_yoy"] = _growth(_fcf_at(panel, prior), fcf)
     return m
+
+
+def _total_debt(g, interest, revenue):
+    """(total debt, unknown flag) from the debt shapes edgar keeps apart.
+
+    A filer with no debt tag at all is either debt-free or tags its debt in
+    a way not covered here. Interest expense tells them apart: with
+    negligible interest the debt is taken as zero, with material interest it
+    is unknown -- never silently zero, which once valued a REIT carrying
+    $26B of notes as debt-free.
+    """
+    short = g("debt_short")
+    if g("debt_current_ltd") is not None:
+        current = g("debt_current_ltd") + (short or 0)
+    elif g("debt_current_all") is not None:
+        current = g("debt_current_all")          # already includes borrowings
+    else:
+        current = short
+    if g("debt_noncurrent") is not None:
+        return g("debt_noncurrent") + (current or 0), False
+    if g("debt_total") is not None:
+        return g("debt_total") + (short or 0), False   # current portion inside
+    if g("debt_notes") is not None:
+        return g("debt_notes") + (short or 0), False
+    if current is not None:
+        return current, False
+    if g("_debt_ever"):
+        return None, True       # it had debt, and the tag has gone quiet
+    # No debt tag, but most of the balance sheet funded by long-term
+    # liabilities (Ford and Paccar finance arms): debt exists, untagged.
+    noncurrent = _sub(g("liabilities"), g("current_liabilities"))
+    if noncurrent is not None and g("assets") and noncurrent > 0.35 * g("assets"):
+        return None, True
+    material = (interest is not None and abs(interest) > 0
+                and (revenue is None or abs(interest) > 0.001 * abs(revenue)))
+    return (None, True) if material else (0, False)
 
 
 def _sub(a, b):
@@ -130,9 +204,12 @@ def _fcf_at(panel, date):
 
 
 def _prior_year(panel, date, back=4):
-    dates = sorted(panel)
-    i = dates.index(date)
-    return dates[i - back] if i >= back else None
+    """The balance-sheet date about `back` quarters before `date`, by
+    calendar rather than by row count, for the same reason as `ttm`."""
+    target = back * 91
+    cands = [d for d in panel if "assets" in panel[d]
+             and abs(_days(d, date) - target) <= 35]
+    return min(cands, key=lambda d: abs(_days(d, date) - target)) if cands else None
 
 
 def piotroski(panel, date):
@@ -227,7 +304,9 @@ def beneish_m(panel, date):
     used = {k: v for k, (_, v) in terms.items() if v is not None}
     if len(used) < 6:
         return None
-    m = -4.84 + sum(w * v for w, v in terms.values() if v is not None)
+    # A missing index enters at its neutral value 1, not 0: dropping it to
+    # zero always pulled the score toward "clean".
+    m = -4.84 + sum(w * (v if v is not None else 1.0) for w, v in terms.values())
     return {"m_score": m, "flag": m > -1.78, "indices": used,
             "components_used": len(used)}
 
@@ -277,9 +356,23 @@ NOT_APPLICABLE = {
                   "net_debt_to_ebitda", "interest_coverage", "roic",
                   "asset_turnover", "working_capital", "ebitda_ttm",
                   "fcf_ttm", "fcf_margin", "fcf_growth_yoy",
-                  "altman_z", "piotroski", "beneish_m"},
-    "real_estate": {"gross_margin", "altman_z", "beneish_m"},
-    "utility": {"gross_margin"},
+                  "fcff_ttm", "fcff_margin",
+                  # Deposits and policy liabilities are a financial firm's
+                  # raw material; "debt" in the industrial sense is not a
+                  # meaningful line for it.
+                  "total_debt", "net_debt", "debt_to_equity",
+                  "altman_z", "piotroski", "beneish_m",
+                  # The same cash-flow swings make accruals and cash
+                  # conversion noise for a bank: JPM's CFO / net income
+                  # reads -2.5 in a normal year.
+                  "accrual_ratio", "cash_conversion"},
+    "real_estate": {"gross_margin", "altman_z", "beneish_m",
+                    # REITs present an unclassified balance sheet.
+                    "current_ratio", "quick_ratio", "working_capital"},
+    # Altman Z'' and the current ratio misread a regulated utility: the
+    # framework's own section 4 calls Z invalid there, and a 0.6 current
+    # ratio is normal for a business with guaranteed cash inflows.
+    "utility": {"gross_margin", "altman_z", "current_ratio"},
     "energy": set(),
 }
 
@@ -300,7 +393,7 @@ def analyze(panel, date, sec="other"):
     sector, and genuinely missing from the filings.
     """
     na = NOT_APPLICABLE.get(sec, set())
-    raw = snapshot(panel, date)
+    raw = snapshot(panel, date, sec)
     notes = {k.lstrip("_"): raw.pop(k) for k in list(raw) if k.startswith("_")}
     # Banks and REITs run at 8-12% equity to assets by regulation and by
     # business model, so the thin-equity warning would fire on every healthy
