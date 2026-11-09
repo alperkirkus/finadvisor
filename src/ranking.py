@@ -51,7 +51,8 @@ def screen_universe():
     still resolve)."""
     import universe as U
     U._sec_contact()        # a member whose filings are not cached is fetched
-    return {U.yahoo_symbol(t): cik for t, cik in U.wikipedia_ciks().items()}
+    wiki = U.wikipedia_ciks()
+    return {U.yahoo_symbol(t): U.resolve(t, wiki) for t in wiki}
 
 
 def score(ticker, cik=None):

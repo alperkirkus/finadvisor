@@ -8,7 +8,13 @@ Scores implemented: Piotroski F-Score (quality), Altman Z''-Score (distress),
 Beneish M-Score (earnings manipulation), plus the standard ratio set.
 """
 
+from datetime import date as _date
+
 TTM = 4  # quarters
+
+
+def _days(a, b):
+    return (_date.fromisoformat(b) - _date.fromisoformat(a)).days
 
 
 def _sum(panel, dates, key):
@@ -23,12 +29,24 @@ def _div(a, b):
 
 
 def ttm(panel, date, key, n=TTM):
-    """Trailing-n-quarter sum of a flow item ending at `date`."""
-    dates = sorted(panel)
-    i = dates.index(date)
-    if i + 1 < n:
+    """Trailing-n-quarter sum of a flow item ending at `date`.
+
+    The window is the last n quarters that carry the item, and they must be
+    consecutive -- spanning about (n - 1) quarters of calendar time. Counting
+    panel rows instead let a stray off-quarter date (an acquisition-date
+    goodwill balance, say) into the window and blanked every trailing figure
+    of the company.
+    """
+    if panel.get(date, {}).get(key) is None:
         return None
-    return _sum(panel, dates[i - n + 1:i + 1], key)
+    dates = [d for d in sorted(panel) if d <= date and panel[d].get(key) is not None]
+    window = dates[-n:]
+    if len(window) < n:
+        return None
+    span = _days(window[0], window[-1])
+    if not (n - 1) * 80 <= span <= (n - 1) * 100:
+        return None
+    return sum(panel[d][key] for d in window)
 
 
 def snapshot(panel, date):
@@ -130,9 +148,12 @@ def _fcf_at(panel, date):
 
 
 def _prior_year(panel, date, back=4):
-    dates = sorted(panel)
-    i = dates.index(date)
-    return dates[i - back] if i >= back else None
+    """The balance-sheet date about `back` quarters before `date`, by
+    calendar rather than by row count, for the same reason as `ttm`."""
+    target = back * 91
+    cands = [d for d in panel if "assets" in panel[d]
+             and abs(_days(d, date) - target) <= 35]
+    return min(cands, key=lambda d: abs(_days(d, date) - target)) if cands else None
 
 
 def piotroski(panel, date):

@@ -213,7 +213,12 @@ def midsmall_universe(start="2013-01-01", end="2025-12-31"):
 
 
 def resolve(ticker, wiki):
-    """CIK for a membership ticker, or None. Never guesses from a name."""
+    """CIK for a membership ticker, or None. Never guesses from a name.
+
+    edgar.CIK_OVERRIDE wins over every table: a reorganisation can point the
+    ticker at a new holding company with almost no history (ExxonMobil)."""
+    if ticker.upper() in edgar.CIK_OVERRIDE:
+        return edgar.CIK_OVERRIDE[ticker.upper()]
     if ticker in wiki:
         return wiki[ticker]
     try:

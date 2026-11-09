@@ -199,6 +199,9 @@ def _days(a, b):
     return (date(*map(int, b.split("-"))) - date(*map(int, a.split("-")))).days
 
 
+QUARTER_DAYS = (60, 120)    # 52/53-week filers run a 16-week first quarter (112 days)
+
+
 def quarterly_flows(facts, chain, asof=None):
     """{end_date: quarterly value} for a flow concept.
 
@@ -208,11 +211,17 @@ def quarterly_flows(facts, chain, asof=None):
     directly. Both are recovered by subtracting the shorter period that
     shares the same start date.
     """
+    from datetime import date, timedelta
+    lo, hi = QUARTER_DAYS
     periods = _periods(facts, chain, asof)
-    out = {}
+    out, starts = {}, {}
     for (s, e), v in periods.items():
-        if 60 <= _days(s, e) <= 110:
+        if lo <= _days(s, e) <= hi:
             out[e] = v
+            starts[e] = s
+
+    def day_after(d):
+        return (date.fromisoformat(d) + timedelta(days=1)).isoformat()
 
     by_start = defaultdict(list)
     for (s, e) in periods:
@@ -220,9 +229,10 @@ def quarterly_flows(facts, chain, asof=None):
     for s, ends in by_start.items():
         ends.sort()
         for prev, cur in zip(ends, ends[1:]):
-            if cur in out or not 60 <= _days(prev, cur) <= 110:
+            if cur in out or not lo <= _days(prev, cur) <= hi:
                 continue
             out[cur] = periods[(s, cur)] - periods[(s, prev)]
+            starts[cur] = day_after(prev)
 
     # Some filers publish only discrete three-month periods in their 10-Qs
     # and never a year-to-date figure, so the subtraction above has nothing
@@ -234,6 +244,27 @@ def quarterly_flows(facts, chain, asof=None):
         inner = [q for q in out if s < q < e and _days(s, q) >= 60]
         if len(inner) == 3:
             out[e] = annual - sum(out[q] for q in inner)
+
+    # A quarter that was never reported on its own, but sits inside a
+    # longer period whose other quarters are known (Con Ed's Q2: nine months
+    # minus Q1 minus Q3), is that period less the known quarters.
+    for (s, e), total in periods.items():
+        if not 150 <= _days(s, e) <= 400:
+            continue
+        inner = sorted((starts[q], q) for q in out
+                       if q in starts and starts[q] >= s and q <= e)
+        if not inner or inner[0][0] != s or inner[-1][1] != e:
+            continue
+        gaps = [(day_after(a_end), b_start) for (_, a_end), (b_start, _)
+                in zip(inner, inner[1:]) if day_after(a_end) != b_start]
+        if len(gaps) != 1:
+            continue
+        g_start, g_next = gaps[0]
+        g_end = (date.fromisoformat(g_next) - timedelta(days=1)).isoformat()
+        if g_end in out or not lo <= _days(g_start, g_end) <= hi:
+            continue
+        out[g_end] = total - sum(out[q] for _, q in inner)
+        starts[g_end] = g_start
     return out
 
 
@@ -323,7 +354,32 @@ def panel(facts, asof=None):
             rows[d][name] = v
         for d, v in annual_flows(facts, chain, asof).items():
             rows[d][name + "_fy"] = v
+    _bank_revenue(facts, rows, asof)
     return dict(sorted(rows.items()))
+
+
+# Regional banks such as Regions, Truist and Synchrony tag no total revenue
+# at all, only its two parts. A bank's net revenue is net interest income
+# plus noninterest income, so where revenue is missing it is rebuilt from
+# them; a period that has a revenue tag is never overwritten.
+BANK_REVENUE_PARTS = {
+    "net_interest_income": ["InterestIncomeExpenseNet", "InterestRevenueExpenseNet"],
+    "noninterest_income": ["NoninterestIncome"],
+}
+
+
+def _bank_revenue(facts, rows, asof):
+    parts = {}
+    for name, chain in BANK_REVENUE_PARTS.items():
+        parts[name] = (quarterly_flows(facts, chain, asof),
+                       annual_flows(facts, chain, asof))
+    (nii_q, nii_y), (non_q, non_y) = parts["net_interest_income"], parts["noninterest_income"]
+    for d in set(nii_q) & set(non_q):
+        if "revenue" not in rows[d]:
+            rows[d]["revenue"] = nii_q[d] + non_q[d]
+    for d in set(nii_y) & set(non_y):
+        if "revenue_fy" not in rows[d]:
+            rows[d]["revenue_fy"] = nii_y[d] + non_y[d]
 
 
 # Reorganizations mint a fresh CIK, so the ticker file points at a holdco
@@ -353,10 +409,12 @@ def sector(sic):
         s = int(sic)
     except (TypeError, ValueError):
         return "unknown"
+    # REITs (6798) own property, they do not lend: valuing them on a bank's
+    # justified P/B ranked them the wrong way in both backtest windows.
+    if 6500 <= s <= 6599 or s == 6798:
+        return "real_estate"
     if 6000 <= s <= 6499 or 6700 <= s <= 6799:
         return "financial"
-    if 6500 <= s <= 6599:
-        return "real_estate"
     if 4900 <= s <= 4999:
         return "utility"
     if 1000 <= s <= 1499 or 2900 <= s <= 2999:
