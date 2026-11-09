@@ -96,7 +96,7 @@ def fair_value_read(val):
     labels = {h: _horizon_label(cells.get(str(h))) for h in FV_HORIZONS}
     final = labels[FV_HORIZONS[-1]]
     tone = {"olumlu": "good", "olumsuz": "critical", "belirsiz": "neutral"}[final]
-    parts, hits = [], []
+    parts, hits, horizons = [], [], []
     for h in FV_HORIZONS:
         c = cells.get(str(h))
         if not c:
@@ -104,7 +104,15 @@ def fair_value_read(val):
         parts.append("%d yıl: %s (evrene göre %+.1f%%)"
                      % (h // 12, labels[h], c["mean_excess"] * 100))
         hits.append("%d yılda %%%.0f" % (h // 12, c["hit_rate"] * 100))
-    return {"name": "Adil değer hedefi", "value": upside,
+        horizons.append({"years": h // 12, "hit_rate": c["hit_rate"],
+                         "mean_excess": c["mean_excess"], "label": labels[h]})
+    # How long such a target has taken: the first horizon by which at least
+    # half of the band's targets were reached. None means most were still
+    # not reached after the longest horizon measured.
+    expected = next((x["years"] for x in horizons if x["hit_rate"] >= 0.5), None)
+    return {"key": "fair_value", "name": "Adil değer hedefi", "value": upside,
+            "method": method, "band": band, "horizons": horizons,
+            "expected_years": expected, "price": pvf["price"], "fair": pvf["fair"],
             "state": "3 yıl: %s" % final, "tone": tone,
             "reading": ("Fiyat %.2f, adil değer %.2f (%s). Geçmişte bu bantta "
                         "%s." % (pvf["price"], pvf["fair"], band, "; ".join(parts))),
@@ -159,7 +167,7 @@ def issuance_read(val):
         state, tone, reading = ("nötr", "neutral",
                                 "Hisse sayısı bir yılda %%%+.1f değişti."
                                 % (round(x * 100, 1) + 0.0))
-    return {"name": "Net hisse ihracı (12 ay)", "value": x, "state": state,
+    return {"key": "issuance", "name": "Net hisse ihracı (12 ay)", "value": x, "state": state,
             "tone": tone, "reading": reading,
             "evidence": ("Backtest: S&P 400/600 şirketlerinde hisse ihraç "
                          "edenler sonraki 12 ayda geride kaldı (IC −0.049, t −2.5 "
@@ -193,7 +201,7 @@ def fall_risk(val):
                      "Yüksek oynaklıklı şirketler 2020-2025 kontrol "
                      "döneminde de evrenden sık düştü."),
     }[key]
-    return {"name": "12 ayda %25+ düşüş riski", "value": rate,
+    return {"key": "fall_risk", "name": "12 ayda %25+ düşüş riski", "value": rate,
             "state": state, "tone": tone,
             "reading": ("Son 12 ayın yıllık oynaklığı %%%.0f (%s itibarıyla)."
                         % (vol * 100, val["volatility"]["through"])),
@@ -250,7 +258,7 @@ def measured_signals(pkg):
             evidence = ("Sloan (1996): tahakkukları yüksek şirketler sonraki "
                         "dönemde sistematik olarak düşük performans gösterir.")
 
-        out.append({"name": "Tahakkuk oranı", "value": round(accrual, 4),
+        out.append({"key": "accrual", "name": "Tahakkuk oranı", "value": round(accrual, 4),
                     "state": state, "tone": tone, "reading": reading,
                     "evidence": evidence})
     return out
@@ -767,16 +775,17 @@ def assess(pkg, val=None):
     # that fails a pillar usually has a benign reading, and showing one
     # without the other is how a tool like this misleads.
     flags = interpret.red_flags(pkg)
+    signals = measured_signals(pkg) + [
+        s for s in [fair_value_read(val), fall_risk(val), issuance_read(val)] if s]
 
     return {
         "verdict": label,
+        "summary": plain_summary(pkg, val, label, business_score, signals),
         "rationale": rationale,
         "caveats": flags,
         "business_score": business_score,
         "pillars": pillars,
-        "measured_signals": measured_signals(pkg) + [
-            s for s in [fair_value_read(val), fall_risk(val),
-                        issuance_read(val)] if s],
+        "measured_signals": signals,
         "next_quarter": next_quarter(pkg),
         "confidence": interpret.confidence(pkg),
         "basis": "Bu sonuc, knowledge/analysis-framework.md icindeki acikca "
@@ -790,6 +799,68 @@ def assess(pkg, val=None):
                       "alim-satim tavsiyesi veya hedef fiyat degildir. "
                       "Karar senin.",
     }
+
+
+VERDICT_WORDS = {
+    "yatirim yapilabilir": "yatırım yapılabilir",
+    "iyi sirket, pahali fiyat": "iyi şirket ama fiyatı pahalı",
+    "ucuz ama sorunlu": "ucuz ama sorunlu",
+    "kosullu": "koşullu -- ne net olumlu ne net olumsuz",
+    "yatirim yapilamaz": "yatırım için uygun değil",
+    "fiyatlanamaz": "işletme değerlendirildi ama fiyatlanamıyor",
+    "fiyat verisi yok": "fiyat alınamadı",
+    "degerlendirilemez": "veri hüküm vermeye yetmiyor",
+}
+
+
+def plain_summary(pkg, val, label, business_score, signals):
+    """The verdict in a few plain sentences, for a reader who will not open
+    the tables. Built only from numbers computed elsewhere in the verdict."""
+    out = []
+    if business_score is not None:
+        band = ("güçlü" if business_score >= PASS else
+                "zayıf" if business_score < WEAK else "orta")
+        out.append("Kârlılık, borç durumu ve kâr kalitesine göre %s bir "
+                   "işletme (100 üzerinden %.0f)." % (band, business_score))
+    by_key = {s.get("key"): s for s in signals}
+    fv = by_key.get("fair_value")
+    if fv:
+        up = fv["value"]
+        look = "ucuz" if up > 0 else "pahalı"
+        where = ("adil değerine yakın" if abs(up) < 0.10 else
+                 "adil değerinin altında, yani ucuz görünüyor" if up > 0 else
+                 "adil değerinin üstünde, yani pahalı görünüyor")
+        out.append("Hisse fiyatı %.2f, sistemin tahmini adil değeri %.2f "
+                   "(fark %+.0f%%): fiyat %s." % (fv["price"], fv["fair"], up * 100, where))
+        horizons = fv["horizons"]
+        if horizons and abs(up) >= 0.10:
+            last = horizons[-1]
+            if fv["expected_years"]:
+                out.append("Geçmişte bu kadar %s görünen hisselerin yarısının "
+                           "fiyatı yaklaşık %d yıl içinde adil değere ulaştı."
+                           % (look, fv["expected_years"]))
+            else:
+                out.append("Geçmişte bu kadar %s görünen hisselerin fiyatı %d "
+                           "yılda bile çoğunlukla adil değere %s (oran: %%%.0f)."
+                           % (look, last["years"],
+                              "çıkmadı" if up > 0 else "inmedi",
+                              last["hit_rate"] * 100))
+            out.append({"olumlu": "Bu hisseler sonraki %d yılda piyasa "
+                                  "ortalamasından anlamlı biçimde iyi gitti.",
+                        "olumsuz": "Bu hisseler sonraki %d yılda piyasa "
+                                   "ortalamasının anlamlı biçimde gerisinde kaldı.",
+                        "belirsiz": "Bu hisselerin sonraki %d yılı piyasa "
+                                    "ortalamasından belirgin biçimde farklı "
+                                    "olmadı; fiyat hedefi tek başına al-sat "
+                                    "sinyali sayılmamalı."}[last["label"]]
+                       % last["years"])
+    risk = by_key.get("fall_risk")
+    if risk:
+        out.append("Büyük düşüş riski %s: son bir yılın oynaklığı %s."
+                   % (risk["state"], risk["reading"].split("oynaklığı ")[-1]
+                      .split(" (")[0]))
+    out.append("Sonuç: %s." % VERDICT_WORDS.get(label, label))
+    return out
 
 
 def by_name_reasons(pillars, name):

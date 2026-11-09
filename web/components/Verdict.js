@@ -65,16 +65,16 @@ export default function Verdict({ ticker, company, children }) {
   }, [ticker]);
 
   const head = (
-    <div className="top spread wrap" style={{ marginBottom: 30 }}>
-      <div>
-        <div className="label" style={{ marginBottom: 7 }}>{company.industry}</div>
+    <div style={{ marginBottom: 22 }}>
+      <div className="label" style={{ marginBottom: 6 }}>{company.industry}</div>
+      <div className="row wrap" style={{ gap: 12, alignItems: "baseline" }}>
         <div className="display">{company.name}</div>
+        <span className="chip s-neutral">{company.ticker}</span>
       </div>
-      <div className="num dim" style={{ fontSize: 14, paddingTop: 26 }}>{company.ticker}</div>
     </div>
   );
 
-  if (error) return <>{head}<div className="body">{error}</div></>;
+  if (error) return <>{head}<div className="group group-pad small">{error}</div></>;
   if (!d) return <>{head}<div className="small dim">Fiyat ve değerleme alınıyor…</div></>;
 
   const w = d.verdict, v = d.valuation;
@@ -83,101 +83,118 @@ export default function Verdict({ ticker, company, children }) {
   const implied = v?.dcf?.implied_growth;
   const hist = v?.assumptions?.historical_fcf_growth;
   const nq = w.next_quarter;
+  const fv = (w.measured_signals || []).find((m) => m.key === "fair_value");
+  const upside = v?.upside_to_fair;
+  const upTone = upside == null ? "neutral"
+    : upside > 0.10 ? "good" : upside < -0.10 ? "critical" : "neutral";
+
+  // How long a target like this one has taken historically: the first
+  // horizon by which half of the same band's targets were reached.
+  let period = { v: "—", note: "geçmiş kayıt yok" };
+  if (fv) {
+    const last = fv.horizons[fv.horizons.length - 1];
+    if (Math.abs(fv.value) < 0.10) period = { v: "Yakın", note: "fiyat zaten adil değere yakın" };
+    else if (fv.expected_years) period = {
+      v: `~${fv.expected_years} yıl`,
+      note: "benzer hedeflerin yarısı bu sürede gerçekleşti",
+    };
+    else if (last) period = {
+      v: `${last.years}+ yıl`,
+      note: `benzerlerinden yalnızca %${Math.round(last.hit_rate * 100)} oranında ${last.years} yılda gerçekleşti`,
+    };
+  }
 
   return (
     <>
       {head}
 
+      <div className={`pill s-${vd.tone}`} style={{ marginBottom: 10 }}>
+        <span aria-hidden="true" style={{ fontSize: 10 }}>{vd.g}</span>{vd.label}
+      </div>
+      <div className="lead" style={{ marginBottom: 28, maxWidth: "60ch" }}>{w.rationale}</div>
+
+      {w.summary?.length > 0 && (
+        <div className="section">
+          <div className="section-title">Özet</div>
+          <div className="group group-pad">
+            <ul className="summary">
+              {w.summary.map((line, i) => <li key={i}>{line}</li>)}
+            </ul>
+          </div>
+          <div className="section-foot">{w.disclaimer}</div>
+        </div>
+      )}
+
       {v && (
-        <div style={{ marginBottom: 26 }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "26px 54px", alignItems: "flex-end" }}>
-            <div>
-              <div className="label" style={{ marginBottom: 6 }}>şu anki fiyat</div>
-              <div className="price">{v.quote.price.toFixed(2)}</div>
+        <div className="section">
+          <div className="section-title">Fiyat ve değer</div>
+          <div className="group">
+            <div className="tiles">
+              <div className="tile">
+                <div className="label">Şu anki fiyat</div>
+                <div className="price">{v.quote.price.toFixed(2)}</div>
+                <div className="micro">{v.quote.currency} · {money(v.market_cap)}</div>
+              </div>
+              <div className="tile">
+                <div className="label">Tahmini adil değer</div>
+                <div className="price">
+                  {v.fair_value?.base != null ? v.fair_value.base.toFixed(2) : "—"}
+                </div>
+                {upside != null && (
+                  <div className={`small s-${upTone}`} style={{ fontWeight: 600 }}>
+                    {upside > 0 ? "+" : ""}{(upside * 100).toFixed(0)}%
+                    {" "}{upside > 0.10 ? "ucuz" : upside < -0.10 ? "pahalı" : "yakın"}
+                  </div>
+                )}
+              </div>
+              <div className="tile">
+                <div className="label">Beklenen süre</div>
+                <div className="price">{period.v}</div>
+                <div className="micro">{period.note}</div>
+              </div>
             </div>
-            {v.fair_value?.base != null && (
-              <div>
-                <div className="label" style={{ marginBottom: 6 }}>olması gereken</div>
-                <div className="row" style={{ gap: 14, alignItems: "baseline" }}>
-                  <span className="price" style={{ fontSize: 34 }}>
-                    {v.fair_value.base.toFixed(2)}
-                  </span>
-                  <span className={`num s-${
-                    v.upside_to_fair > 0.15 ? "good"
-                    : v.upside_to_fair < -0.15 ? "critical" : "warning"}`}
-                        style={{ fontSize: 18 }}>
-                    {v.upside_to_fair > 0 ? "+" : ""}{(v.upside_to_fair * 100).toFixed(0)}%
-                  </span>
+          </div>
+          {v.fair_value?.basis && (
+            <div className="section-foot">
+              {v.fair_value.method ? `${v.fair_value.method}: ` : ""}{v.fair_value.basis}
+            </div>
+          )}
+        </div>
+      )}
+
+      {w.measured_signals?.length > 0 && (
+        <div className="section">
+          <div className="section-title">Ölçülmüş sinyaller</div>
+          <div className="group">
+            {w.measured_signals.map((m) => (
+              <div key={m.name} className="cell">
+                <span className={`dot s-${m.tone}`} aria-hidden="true" />
+                <div className="main">
+                  <div className="title">{m.name}</div>
+                  <div className="sub">{m.reading}</div>
+                  <details className="more">
+                    <summary>Nasıl ölçüldü?</summary>
+                    <div className="micro">{m.evidence}</div>
+                  </details>
+                </div>
+                <div className="trail">
+                  <div className="num" style={{ fontSize: 16, fontWeight: 600 }}>{pct(m.value)}</div>
+                  <span className={`chip s-${m.tone}`} style={{ marginTop: 4 }}>{m.state}</span>
                 </div>
               </div>
-            )}
+            ))}
           </div>
-          <div className="micro" style={{ marginTop: 12 }}>
-            {v.quote.currency} · {v.quote.exchange} · {money(v.market_cap)} piyasa değeri
-            {v.fair_value?.basis && <> · {v.fair_value.basis}</>}
+          <div className="section-foot">
+            Yalnızca geçmiş verilerle test edilmiş okumalar. Her birinin altında
+            hangi dönemde ve hangi şirketlerde ölçüldüğü yazar.
           </div>
-          {v.reversion?.window_note && (
-            <div className="micro s-warning" style={{ marginTop: 8 }}>
-              <span aria-hidden="true">◆ </span>{v.reversion.window_note}
-            </div>
-          )}
-          {v.divergence && (
-            <div className={`note ${v.divergence.level === "yuksek" ? "s-warning" : "s-neutral"}`}
-                 style={{ marginTop: 16 }}>
-              <div className="small">{v.divergence.note}</div>
-            </div>
-          )}
         </div>
       )}
 
-      <div className={`headline state s-${vd.tone}`} style={{ marginBottom: 12 }}>
-        <span className="g" aria-hidden="true">{vd.g}</span>{vd.label}
+      <div className="section" style={{ marginTop: 36 }}>
+        <div className="section-title">Ayrıntılar</div>
       </div>
-      <div className="lead" style={{ marginBottom: 40, maxWidth: "58ch" }}>{w.rationale}</div>
-
-      {/* The one part of the output with measured evidence behind it, kept
-          separate from the framework score rather than folded into it. */}
-      {w.measured_signals?.length > 0 && (
-        <div style={{ marginBottom: 40 }}>
-          <div className="label" style={{ marginBottom: 14 }}>Ölçülmüş sinyaller</div>
-          {w.measured_signals.map((m) => (
-            <div key={m.name} className={`note s-${m.tone}`} style={{ marginBottom: 18 }}>
-              <div className="row" style={{ gap: 12, alignItems: "baseline" }}>
-                <span style={{ color: "var(--ink)", fontSize: 15 }}>{m.name}</span>
-                <span className="num" style={{ fontSize: 17 }}>{pct(m.value)}</span>
-                <span className={`chip s-${m.tone}`}>{m.state}</span>
-              </div>
-              <div className="small" style={{ marginTop: 3 }}>{m.reading}</div>
-              <div className="micro" style={{ marginTop: 5 }}>{m.evidence}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {v && (
-        <>
-          <hr className="rule" />
-          <div className="defs">
-            <Def k="Adil değer aralığı"
-                 v={v.fair_value ? `${v.fair_value.low} – ${v.fair_value.high}` : "—"}
-                 note={v.fair_value ? `baz ${v.fair_value.base}` : "nakit akışı iskontosu uygulanamadı"} />
-            <Def k="Güvenlik payı"
-                 v={v.margin_of_safety == null ? "—" : pct(v.margin_of_safety, 0)}
-                 tone={v.margin_of_safety == null ? null
-                   : v.margin_of_safety > 0.15 ? "good"
-                   : v.margin_of_safety < -0.15 ? "critical" : "warning"}
-                 note="adil değere göre fiyat konumu" />
-            <Def k="Fiyatın ima ettiği büyüme" v={pct(implied)}
-                 tone={implied == null || hist == null ? null : hist >= implied ? "good" : "critical"}
-                 note={hist == null ? null
-                   : `şirketin geçmişi ${pct(hist)} — ${hist >= implied ? "karşılanabilir" : "bunun üstünde"}`} />
-            <Def k="Sermaye maliyeti" v={pct(cc?.wacc, 2)}
-                 note={cc?.beta ? `beta ${cc.beta}, ${cc.beta_months} ay regresyon` : cc?.method} />
-          </div>
-        </>
-      )}
-
-      <div style={{ marginTop: 44 }}>
+      <div>
         {w.caveats.length > 0 && (
           <Fold title="Bu sonucu okurken" count={w.caveats.length}>
             <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
@@ -202,7 +219,7 @@ export default function Verdict({ ticker, company, children }) {
           </Fold>
         )}
 
-        <Fold title="Sütunlar">
+        <Fold title="Skorun bileşenleri">
           <div className="defs">
             {w.pillars.map((p) => (
               <div key={p.name} style={{ display: "block", padding: "15px 0" }}>
@@ -219,7 +236,55 @@ export default function Verdict({ ticker, company, children }) {
           </div>
         </Fold>
 
-        {v?.reversion && (
+        {v && (
+          <Fold title="Değerleme göstergeleri">
+            <div className="defs">
+              <Def k="Adil değer aralığı"
+                   v={v.fair_value ? `${v.fair_value.low} – ${v.fair_value.high}` : "—"}
+                   note={v.fair_value ? `baz ${v.fair_value.base}` : "yöntem uygulanamadı"} />
+              <Def k="Güvenlik payı"
+                   v={v.margin_of_safety == null ? "—" : pct(v.margin_of_safety, 0)}
+                   tone={v.margin_of_safety == null ? null
+                     : v.margin_of_safety > 0.15 ? "good"
+                     : v.margin_of_safety < -0.15 ? "critical" : "warning"}
+                   note="adil değere göre fiyat konumu" />
+              <Def k="Fiyatın ima ettiği büyüme" v={pct(implied)}
+                   tone={implied == null || hist == null ? null : hist >= implied ? "good" : "critical"}
+                   note={hist == null ? null
+                     : `şirketin geçmişi ${pct(hist)} — ${hist >= implied ? "karşılanabilir" : "bunun üstünde"}`} />
+              <Def k="Sermaye maliyeti" v={pct(cc?.wacc, 2)}
+                   note={cc?.beta ? `beta ${cc.beta}, ${cc.beta_months} ay regresyon` : cc?.method} />
+            </div>
+            {v.divergence && (
+              <div className="micro" style={{ marginTop: 14 }}>{v.divergence.note}</div>
+            )}
+            {v.reversion?.window_note && (
+              <div className="micro s-warning" style={{ marginTop: 8 }}>{v.reversion.window_note}</div>
+            )}
+          </Fold>
+        )}
+
+        {v?.bank && (
+          <Fold title="Banka değerlemesi nasıl yapıldı">
+            <div className="small" style={{ marginBottom: 14 }}>
+              Bankalarda serbest nakit akışı anlamsızdır. Adil değer, özsermaye
+              kârlılığının yatırımcının beklediği getiriyi ne kadar aştığından
+              gelir: gerekçeli F/DD = (ROE − g) / (Ke − g).
+            </div>
+            <table>
+              <tbody>
+                <tr><td>Medyan ROE (sürdürülebilir)</td><td className="r">{pct(v.bank.roe_used)}</td></tr>
+                <tr><td>Son ROE</td><td className="r">{pct(v.bank.roe_now)}</td></tr>
+                <tr><td>Özsermaye maliyeti (Ke)</td><td className="r">{pct(v.bank.cost_of_equity)}</td></tr>
+                <tr><td>Uzun vadeli büyüme (g)</td><td className="r">{pct(v.bank.growth)}</td></tr>
+                <tr><td>Gerekçeli F/DD</td><td className="r">{v.bank.justified_pb}×</td></tr>
+                <tr><td>Hisse başı defter değeri</td><td className="r">{v.bank.book_per_share}</td></tr>
+              </tbody>
+            </table>
+          </Fold>
+        )}
+
+        {v?.reversion && !v?.bank && (
           <Fold title="Adil değer nasıl bulundu">
             <div className="small" style={{ marginBottom: 18 }}>
               Manşetteki sayı, şirketin <strong>kendi tarihsel EV/FCF
