@@ -370,6 +370,57 @@ def _add_month(month, n):
     return "%04d-%02d" % (year, (mon - 1) % 12 + 1)
 
 
+def value_driver(pkg, capital, shares, net_debt):
+    """Fair value from the key value driver formula.
+
+    EV = NOPAT x (1 - g / ROIC) / (WACC - g) (Koller, Goedhart & Wessels,
+    *Valuation*, ch. 3): a company is worth its operating profit after the
+    reinvestment its growth requires, and that reinvestment is smaller the
+    higher its return on capital. It is the non-financial counterpart of the
+    justified P/B used for banks -- value from the spread between return and
+    cost of capital rather than from the company's own past multiple.
+
+    NOPAT is the median operating margin of the history times current
+    revenue, after tax -- earning power, not one quarter's margin; ROIC is
+    the median of the history; g is the terminal rate.
+    """
+    m = pkg["latest_metrics"]
+    rev = m.get("revenue_ttm")
+    wacc = capital.get("wacc")
+    margins = sorted(v for _, v in (pkg["trends"].get("operating_margin") or {})
+                     .get("series") or [] if v is not None)
+    roics = sorted(v for _, v in (pkg["trends"].get("roic") or {})
+                   .get("series") or [] if v is not None)
+    if not rev or not wacc or not shares or len(margins) < 8 or len(roics) < 8:
+        return None
+    margin, roic = margins[len(margins) // 2], roics[len(roics) // 2]
+    tax = m.get("effective_tax_rate")
+    tax = 0.21 if tax is None or not 0 <= tax <= 0.35 else tax
+    nopat = margin * rev * (1 - tax)
+    g = TERMINAL_GROWTH
+    if nopat <= 0 or roic <= g:
+        return None
+
+    def per_share(rate):
+        if rate <= g:
+            return None
+        ev = nopat * (1 - g / roic) / (rate - g)
+        return round((ev - (net_debt or 0)) / shares, 2)
+
+    fair = per_share(wacc)
+    if fair is None or fair <= 0:
+        return None
+    return {"fair": fair, "low": per_share(wacc + 0.01), "high": per_share(wacc - 0.01),
+            "nopat": round(nopat), "roic_used": round(roic, 4),
+            "margin_used": round(margin, 4), "wacc": round(wacc, 4), "growth": g,
+            "basis": ("NOPAT %s × (1 − g/ROIC %.1f%%) / (WACC %.1f%% − g %.1f%%)"
+                      % (_short(nopat), roic * 100, wacc * 100, g * 100))}
+
+
+def _short(v):
+    return "%.1f Mr$" % (v / 1e9) if abs(v) >= 1e9 else "%.0f M$" % (v / 1e6)
+
+
 def justified_pb(pkg, capital, shares, net_income):
     """Bank fair value from the justified price-to-book multiple.
 
@@ -616,9 +667,11 @@ def value(pkg, market=None):
     except Exception:
         volatility = None
 
-    bank = None
+    bank = driver = None
     if company["sector_bucket"] == "financial":
         bank = justified_pb(pkg, capital, shares, net_income=ni)
+    else:
+        driver = value_driver(pkg, capital, shares, net_debt)
 
     fair = _fair_range(dcf)
     headline = reversion["fair"] if reversion else base_value
@@ -653,6 +706,7 @@ def value(pkg, market=None):
         "reversion": reversion,
         "dcf_fair_value": fair,
         "bank": bank,
+        "value_driver": driver,
         "fair_value": ({"base": bank["fair"], "low": bank["low"],
                         "high": bank["high"], "basis": bank["basis"],
                         "method": "gerekçeli F/DD (ROE - g) / (Ke - g)"}

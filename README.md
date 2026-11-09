@@ -221,6 +221,17 @@ in both windows: 12-month IC +0.15 (t = 5.9) in 2013-2019 and +0.17
 year, positive in 11 of 13 years. The banks that failed in 2023 (SVB, First Republic,
 Signature) are not in the data, so the later window is somewhat flattering.
 
+The same idea was tried for everything else with the key value driver
+formula, EV = NOPAT × (1 − g/ROIC) / (WACC − g) (Koller, Goedhart & Wessels,
+*Valuation*), on median operating margin and median ROIC, with a ship
+criterion written down first: positive 12-month IC at t ≥ 2 in both
+windows. It failed (2013-2019 IC −0.01, sector-neutral −0.02), so the
+headline fair value for non-financials is still the historical-multiple
+reversion and the value-driver estimate is only reported alongside it
+(`value_driver` in the valuation output). Book value and return on equity
+describe a lender far better than a steady-state profit formula describes a
+company whose value sits in intangibles and growth.
+
 `validate.py` is the regression guard. Run it after any change to `edgar.py`:
 it checks the derived quarters against each company's own reported fiscal
 year, the balance sheet identity, sign conventions and period continuity

@@ -83,7 +83,7 @@ SIGNALS = ["overall", "business_score", "quality", "safety",
            "fcf_yield", "roic",
            "gross_profitability", "asset_growth", "net_issuance", "momentum",
            "earnings_yield", "multifactor", "sue", "revenue_surprise",
-           "volatility", "upside", "dcf_upside"]
+           "volatility", "upside", "dcf_upside", "vd_upside"]
 
 # Candidate signals from the literature, each with the sign its source
 # predicts. The composite averages their within-sector percentiles with
@@ -372,6 +372,8 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "fcf_margin_trend": (pkg["trends"].get("fcf_margin") or {}).get("direction"),
             "revenue_trend": (pkg["trends"].get("revenue_ttm") or {}).get("direction"),
             "dcf_upside": (val or {}).get("dcf_upside"),
+            "vd_upside": (round(val["value_driver"]["fair"] / raw[month] - 1, 4)
+                          if (val or {}).get("value_driver") else None),
             "sue": _surprise(facts, asof, "eps_diluted"),
             "revenue_surprise": _surprise(facts, asof, "revenue"),
             "forward": forward,
