@@ -9,7 +9,6 @@ import os
 import time
 
 import backtest
-import edgar
 import report
 import valuation as valuation_mod
 import verdict as verdict_mod
@@ -30,19 +29,17 @@ ORDER = {
 }
 
 
-def cached_universe():
-    """Tickers whose filings are already on disk -- no download to rank them."""
-    ciks = set()
-    for name in os.listdir(os.path.join(edgar.CACHE)):
-        if name.startswith("facts_") and name.endswith(".json"):
-            ciks.add(int(name[len("facts_"):-len(".json")]))
-    table = json.load(open(os.path.join(edgar.CACHE, "tickers.json")))
-    out = []
-    for row in table.values():
-        if row["cik_str"] in ciks:
-            out.append(row["ticker"])
-            ciks.discard(row["cik_str"])
-    return out
+# The screen's universe is fixed rather than "whatever filings are cached":
+# the backtest prefetches every S&P 500 member, and a screen that grew with
+# the cache would silently become a 600-name live-quote job.
+SCREEN_UNIVERSE = [
+    "AAPL", "ABBV", "ADBE", "AMZN", "AVGO", "AXP", "BA", "BAC", "BMY", "CAT",
+    "COP", "COST", "CRM", "CSCO", "CVX", "DIS", "DUK", "F", "GE", "GILD",
+    "GOOGL", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "LLY",
+    "MCD", "META", "MRK", "MSFT", "NEE", "NKE", "NVDA", "ORCL", "PEP", "PFE",
+    "PG", "QCOM", "SBUX", "T", "TGT", "TSLA", "TXN", "UNH", "UPS", "VZ",
+    "WFC", "WMT", "XOM",
+]
 
 
 def overall_score(business, price_score):
@@ -94,7 +91,7 @@ def score(ticker):
 
 
 def build(universe=None, verbose=True):
-    universe = universe or cached_universe()
+    universe = universe or SCREEN_UNIVERSE
     rows, failed = [], []
     for ticker in universe:
         try:

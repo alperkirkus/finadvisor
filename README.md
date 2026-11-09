@@ -68,7 +68,8 @@ different rule than the one it explains would be a second, hidden model.
 Blocked companies sink to the bottom whatever they score, and so does anything
 whose valuation rests on a large model-versus-market gap: the number may be
 right, but promoting it silently would be its own distortion. The universe is
-whatever filings are already cached (52 companies), not all 10,412 filers —
+a fixed list of 53 large caps (`ranking.SCREEN_UNIVERSE`), not all 10,412
+filers and not the backtest's S&P 500 cache —
 scoring one needs a live quote and a beta regression, so the screen is built
 offline by `ranking.py` and served from a file.
 
