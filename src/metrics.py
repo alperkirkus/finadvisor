@@ -65,14 +65,15 @@ def snapshot(panel, date, sec=None):
     if op is None and pretax is not None:
         # EBIT = pretax income + interest expense. For a lender, interest is
         # its cost of goods and pretax income is the operating line.
-        if sec == "financial":
-            op = pretax
-        elif interest is not None:
+        if sec == "financial" or interest is None:
+            op = pretax         # EBT: understates EBIT by the unknown interest
+        else:
             op = pretax + abs(interest)
     dep = ttm(panel, date, "depreciation")
 
     gross = (rev - cogs) if (rev is not None and cogs is not None) else ttm(panel, date, "gross_profit")
     fcf = (cfo - capex) if (cfo is not None and capex is not None) else None
+    sbc = ttm(panel, date, "sbc")
     ebitda = (op + dep) if (op is not None and dep is not None) else None
     debt, debt_unknown = _total_debt(g, interest, rev)
     cash_eq = (g("cash") or 0) + (g("short_term_investments") or 0)
@@ -88,6 +89,15 @@ def snapshot(panel, date, sec=None):
     invested = (_add(g("equity"), debt)
                 if g("equity") is not None and debt is not None else None)
     nopat = op * (1 - tax_rate) if (op is not None and tax_rate is not None) else None
+    # Free cash flow to the firm, the flow a WACC discounts (Damodaran ch.
+    # 15; Koller ch. 8). CFO under US GAAP is after interest, so after-tax
+    # interest is added back -- otherwise interest is paid twice, once in the
+    # flow and once through the net debt subtracted from enterprise value --
+    # and stock-based compensation, a real cost that CFO adds back, is
+    # deducted.
+    t = tax_rate if tax_rate is not None and 0 <= tax_rate <= 0.35 else 0.21
+    fcff = (cfo + abs(interest or 0) * (1 - t) - capex - (sbc or 0)
+            if (cfo is not None and capex is not None) else None)
 
     # Sustained buybacks push book equity to zero or below at a lot of mature
     # US companies. Once it does, any ratio with equity in the denominator
@@ -109,6 +119,7 @@ def snapshot(panel, date, sec=None):
         "operating_margin": _div(op, rev),
         "net_margin": _div(ni, rev),
         "fcf_margin": _div(fcf, rev),
+        "fcff_ttm": fcff, "fcff_margin": _div(fcff, rev),
         "roe": _div(ni, equity) if equity_usable else None,
         "equity_to_assets": eq_to_assets,
         "roa": _div(ni, g("assets")),
@@ -293,7 +304,9 @@ def beneish_m(panel, date):
     used = {k: v for k, (_, v) in terms.items() if v is not None}
     if len(used) < 6:
         return None
-    m = -4.84 + sum(w * v for w, v in terms.values() if v is not None)
+    # A missing index enters at its neutral value 1, not 0: dropping it to
+    # zero always pulled the score toward "clean".
+    m = -4.84 + sum(w * (v if v is not None else 1.0) for w, v in terms.values())
     return {"m_score": m, "flag": m > -1.78, "indices": used,
             "components_used": len(used)}
 
@@ -343,13 +356,23 @@ NOT_APPLICABLE = {
                   "net_debt_to_ebitda", "interest_coverage", "roic",
                   "asset_turnover", "working_capital", "ebitda_ttm",
                   "fcf_ttm", "fcf_margin", "fcf_growth_yoy",
+                  "fcff_ttm", "fcff_margin",
+                  # Deposits and policy liabilities are a financial firm's
+                  # raw material; "debt" in the industrial sense is not a
+                  # meaningful line for it.
+                  "total_debt", "net_debt", "debt_to_equity",
                   "altman_z", "piotroski", "beneish_m",
                   # The same cash-flow swings make accruals and cash
                   # conversion noise for a bank: JPM's CFO / net income
                   # reads -2.5 in a normal year.
                   "accrual_ratio", "cash_conversion"},
-    "real_estate": {"gross_margin", "altman_z", "beneish_m"},
-    "utility": {"gross_margin"},
+    "real_estate": {"gross_margin", "altman_z", "beneish_m",
+                    # REITs present an unclassified balance sheet.
+                    "current_ratio", "quick_ratio", "working_capital"},
+    # Altman Z'' and the current ratio misread a regulated utility: the
+    # framework's own section 4 calls Z invalid there, and a 0.6 current
+    # ratio is normal for a business with guaranteed cash inflows.
+    "utility": {"gross_margin", "altman_z", "current_ratio"},
     "energy": set(),
 }
 

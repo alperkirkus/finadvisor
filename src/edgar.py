@@ -111,6 +111,8 @@ DURATION = {
               "PaymentsToAcquireProductiveAssets",
               "PaymentsForCapitalImprovements",
               "PaymentsToAcquireOilAndGasProperty"],
+    "sbc": ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense",
+            "ShareBasedPaymentArrangementNoncashExpense"],
     "depreciation": ["DepreciationDepletionAndAmortization",
                      "DepreciationAndAmortization",
                      "DepreciationAmortizationAndAccretionNet", "Depreciation"],
@@ -507,6 +509,10 @@ def sector(sic):
     # justified P/B ranked them the wrong way in both backtest windows.
     if 6500 <= s <= 6599 or s == 6798:
         return "real_estate"
+    # Exchanges (CME, ICE, Nasdaq) earn fees on a goodwill-heavy book; their
+    # free cash flow is meaningful and a lender's P/B model is not.
+    if s == 6200:
+        return "other"
     if 6000 <= s <= 6499 or 6700 <= s <= 6799:
         return "financial"
     if 4900 <= s <= 4999:

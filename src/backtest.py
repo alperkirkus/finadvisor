@@ -831,10 +831,16 @@ def _fair_value_bands(rows):
             hit = [(r["forward"][h] >= r["upside"]) if r["upside"] >= 0
                    else (r["forward"][h] <= r["upside"]) for r in sel]
             raw = sorted(r["forward"][h] for r in sel)
+            # Beyond 12 months the as-of dates hold too few independent
+            # returns (16-20 dates, a 36-month window spans 12 of them) for a
+            # Newey-West t to mean anything -- it reached 12 for F-Score. The
+            # outcome is still reported; significance is not claimed.
+            t_ok = h <= 12
             cells[str(h)] = {"n": len(sel),
                              "hit_rate": round(sum(hit) / len(hit), 3),
                              "mean_excess": round(nw["mean"], 4) if nw else None,
-                             "t": round(nw["t"], 2) if nw and nw["t"] is not None else None,
+                             "t": (round(nw["t"], 2) if t_ok and nw and nw["t"] is not None
+                                   else None),
                              "median_return": round(raw[len(raw) // 2], 4)}
         out[name] = cells
     return out

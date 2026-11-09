@@ -19,9 +19,9 @@ OUTPUT = os.path.join(os.path.dirname(__file__), "..", "data", "ranking.json")
 # promoted regardless of how it scores elsewhere.
 ORDER = {
     "yatirim yapilabilir": 0,
-    "ucuz ama sorunlu": 1,
-    "kosullu": 2,
-    "iyi sirket, pahali fiyat": 3,
+    "kosullu": 1,
+    "iyi sirket, pahali fiyat": 2,
+    "ucuz ama sorunlu": 3,      # the value-trap bucket: weak business, cheap price
     "fiyatlanamaz": 4,
     "fiyat verisi yok": 5,
     "degerlendirilemez": 6,

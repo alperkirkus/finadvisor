@@ -13,17 +13,17 @@ key.
 
 ## What this is not
 
-**The verdict has no measured predictive power.** The project's own
-point-in-time backtest scores exactly the number the screen orders by, on
-every S&P 500 member of the day that can still be resolved (about 316 names
-per date, 2013-2019 development window, lookahead and restatement bias
-removed by construction). Its cross-sectional rank correlation with
-12-month forward returns is **+0.01** (t = 0.6) against a smallest
-detectable effect of 0.06 — none. After Fama-French five factors plus
-momentum its alpha is exactly zero; what it does carry is a profitability
-tilt. No single input does better: the accrual ratio points the way Sloan
-(1996) predicts but is not significant, and Piotroski's F-Score leans
-slightly the wrong way.
+**The verdict has no measured predictive power for returns.** The
+project's point-in-time backtest scores exactly the number the screen
+orders by, on every S&P 500 member of the day that can be resolved (about
+335 names per date in 2013-2019). Its cross-sectional rank correlation
+with 12-month forward returns is **+0.02** (t = 1.1) against a smallest
+detectable effect of 0.06 — nothing measurable — and its alpha after
+Fama-French five factors plus momentum is 0.08% a month (t = 0.4); what it
+carries is a profitability tilt. Two reads do carry information, listed
+under "Results" below with their caveats: the business score and trailing
+volatility separate the names that later fell hard, and the bank-style
+valuation ranks returns among financial firms.
 
 So this is a structured, inspectable read of financial condition against
 criteria that are written down — not a return forecast, not investment
@@ -123,144 +123,85 @@ measure in the literature, not because this project measured it working.
 Piotroski is reported but no longer weighted, because its prior and its
 measurement agree that it does not discriminate among large companies.
 
-**The backtest finding is negative and worth stating plainly.** On the
-development window (24 quarterly dates, about 316 names each) the screen's
-score has a mean 12-month IC of +0.013 (t = 0.6), and its top quintile beats
-the bottom by 0.8pp (t = 0.6). The smallest IC this sample can detect at 80%
-power is 0.059, so the result is a measured absence, not an unmeasured one.
-Regressed on Fama-French five factors plus momentum, the monthly long-short
-return has an alpha of 0.00% (t = 0.0) and a profitability (RMW) loading of
-+0.47: the score picks profitable companies and nothing beyond what that
-factor already pays. No pillar reaches significance.
+### Results (regenerated after the November 2026 review)
 
-An earlier run on a fixed list of 51 mega caps found the score ranking
-returns the wrong way (IC −0.12, t = −3.3) and an accrual effect at
-t = +4.2. Neither survives on the broader universe; both were small-sample
-artifacts, which is the reason for testing on the index rather than a hand
-list. On the broad universe the accrual ratio keeps the expected sign
-(IC −0.03, alpha −0.30% a month, t = −1.5) and F-Score leans slightly the
-wrong way (IC −0.03, t = −2.2), in line with its documented weakness among
-large caps.
+Every figure below is recomputed from the current `data/backtest_rows*.json`
+after the fixes listed under "Independent review"; 12-month horizon,
+per-date rank IC with Newey-West t. "Dev" is 2013-2019. **2020-2025 is no
+longer a clean holdout**: it was looked at more than once and several
+design choices (REIT reclassification, sub-group notes) were made after
+seeing it, so treat it as a second in-sample window. Survivorship is total
+(see below), and about 300 signal/horizon/universe combinations were tried,
+so a t of 2-3 on any single one is weak evidence.
 
-Survivorship is reduced, not removed. About 75% of each date's members are
-scored; most of the rest are companies later acquired or delisted, which
-have neither a CIK in the SEC ticker map nor a free price history any more.
-That inflates absolute returns; comparisons between names on the same date
-are less affected. `--universe legacy` reruns the original 51-name list.
+| Read | S&P 500 dev | S&P 500 2020-25 | S&P 400/600 dev | S&P 400/600 2020-25 |
+|---|---|---|---|---|
+| Screen score (`overall`), IC | +0.02 (t 1.1) | +0.03 (t 1.0) | +0.05 (t 1.5) | +0.03 (t 1.3) |
+| Financials, bank valuation pillar, IC | +0.13 (t 2.4) | +0.13 (t 2.5) | +0.09 (t 1.5) | +0.14 (t 4.8) |
+| Net share issuance, IC | −0.02 (t −0.6) | −0.09 (t −2.9) | −0.06 (t −3.0) | −0.08 (t −2.9) |
+| Accrual ratio, IC | −0.01 (t −0.6) | −0.02 (t −0.7) | +0.01 | +0.01 |
+| Business score, AUC for a >25% fall | 0.58 (t 3.8) | 0.55 (t 2.5) | 0.58 (t 3.1) | 0.59 (t 6.7) |
 
-The backtest also measures the textbook accounting anomalies as candidate
-replacements, each with the sign its source predicts: gross profitability
-(Novy-Marx 2013), asset growth (Cooper, Gulen & Schill 2008), net share
-issuance (Pontiff & Woodgate 2008), 12-1 month momentum (Jegadeesh & Titman
-1993) and earnings yield (Basu 1977), plus an equal-weight composite of their
-within-sector percentiles with the accrual ratio. Every IC is also reported
-sector-neutral, so a signal that only sorts banks below software firms
-scores zero. On the development window none of them, and not the composite,
-ranks S&P 500 returns: every 12-month IC is within ±0.03, below the 0.06 the
-sample can detect, and the composite's alpha after the six factors is
-0.01% a month. Their factor loadings are the expected ones (asset growth
-−0.59 on CMA, earnings yield +0.72 on HML, gross profitability +0.43 on
-RMW), so the signals are built correctly; among large US companies in
-2013-2019 they simply earned nothing beyond the factors they proxy. Nothing
-from this set is promoted into the verdict. Earnings and revenue surprise
-(seasonal random walk, Foster, Olsen & Shevlin 1984; Jegadeesh & Livnat
-2006) fare no better: post-earnings drift is not visible among these names.
+- **Return ranking: no.** Neither the screen score nor the own-history
+  fair value ranks returns in any window; cheap-against-own-history names
+  are mostly businesses in decline (a value trap), and none of seventeen
+  filters, insider purchases or earnings surprise separated them reliably.
+- **Risk: yes.** A higher business score goes with fewer large falls in
+  every window, and trailing volatility of 35% or more fell more than 25%
+  over the next year at 2.3x the universe rate (13.8% vs 6.1%). Each verdict
+  reports the volatility base rate.
+- **Financials: probably, with caveats.** The justified P/B pillar ranks
+  financial-sector returns in both S&P 500 windows (t 2.4 and 2.5) and in
+  the mid/small 2020-2025 window, but only about 40 names a date are
+  scored and the detectable minimum is about 0.15. By sub-group (both
+  universes pooled) banks hold in both windows (+0.09, t 2.5; +0.16,
+  t 4.6), insurers point the same way without significance (t 1.7, 1.9),
+  brokers and asset managers show nothing. The verdict states the
+  sub-group record.
+- **Net share issuance** ranks mid/small returns in both windows and
+  S&P 500 returns only after 2019; it is reported, not scored.
+- **Horizons beyond 12 months** are shown as outcomes (how often a target
+  was reached), never as significant: with 16-20 overlapping dates a
+  Newey-West t there is meaningless.
 
-What the system does carry is a read on **risk**. A higher business score
-goes with fewer large falls (12-month AUC for a drop of more than 25%:
-0.60 on the development window), and it holds among names of similar
-volatility (0.57) and in the 2020-2025 holdout (0.58, t = 3.0). The
-valuation pillar went the other way on the development window (0.43).
+**Survivorship is total, not partial.** Every scored company still trades
+today; members later acquired or delisted, and renamed companies under their
+old tickers (FB, ANTM, BLL, BK), cannot be resolved with free data, so about
+22% of each date's members are missing and none of the missing ones are
+scored. Absolute figures shown to users (crash base rates, target hit rates,
+the 13% average annual return) are biased upward. Fixing it needs a
+point-in-time ticker history and delisting returns (CRSP, Sharadar).
 
-That suggested a v2: order the screen by business score alone, and let a
-strong business at a merely *fair* price (valuation ≥ 40) count as
-investable. Its holdout criteria were written down before the one logged
-look at 2020-2025: fewer large falls among "investable" names, fewer in the
-screen's top quintile, and top-quintile return no more than 1pp worse. The
-first held (6.9% vs 7.2%), the second did not (8.4% vs 8.0%) — the valuation
-pillar's crash link did not repeat after 2019 — so v2 was not shipped and
-the rule and the screen are unchanged.
+### Independent review (November 2026)
 
-What did ship is the part that held in both windows, reported rather than
-scored: each verdict now carries the trailing 12-month volatility and the
-development-window rate of large falls for its group. Names with annual
-volatility of 35% or more fell more than 25% over the next year 2.4 times
-as often as the universe in 2013-2019 and 1.4 times as often in 2020-2025;
-the rest fell 0.9 and 0.8 times as often. A weak business score on its own
-(1.6x, then 1.0x) did not survive the holdout and is not used for this.
+Two independent reviews — one of the valuation methodology, one of the
+backtest and data pipeline — found errors that moved verdicts and results.
+Fixed:
 
-The fair value itself was tested the way it is meant to be used: price 85,
-fair value 100, buy? Over 2013-2025 the price reached a positive target
-within three years 30-57% of the time depending on the band, and the
-"cheap" bands did not beat the average member at one, two or three years —
-if anything they lagged (−5% over three years, not significant). The
-cheapest names relative to their own history were mostly businesses in
-structural decline (department stores, legacy hardware), whose past cash
-flow overstates their future: the value trap the textbooks warn about.
-None of seventeen candidate filters separated the traps from the
-recoveries consistently in both windows. Each verdict therefore shows its
-fair value next to that measured record — hit rate and excess return per
-horizon, labelled olumlu or olumsuz only where the difference is
-significant — instead of a bare buy signal.
+- Missing debt read as zero (Realty Income's $26B of notes made it
+  "investable"); debt is now unknown, not zero, when untagged and the
+  company is not valued.
+- Reused tickers scored the wrong company (BBT); dates with a market value
+  no index member could have are skipped.
+- Share counts double-adjusted for splits, spin-offs treated as splits,
+  XBRL scale errors; revenue tag picking the contract-revenue subset
+  (MetLife 3% of revenue); net interest tags read as expense; pretax income
+  standing in for operating income.
+- FCF was after interest yet discounted at WACC, and ignored stock-based
+  compensation; valuation now uses FCFF. The historical multiple used spot
+  FCF against today's normalised FCF (Coca-Cola +38% vs about +20%
+  consistently). The implied-growth test compared a first-year rate with a
+  ten-year CAGR.
+- Utilities blocked by Altman Z'' and current ratio (invalid there); quality
+  called "strong" with ROIC below WACC; block text naming the wrong cause;
+  raw betas (now Blume-adjusted, 0.8 floor for insurers); cost of debt below
+  the risk-free rate; exchanges valued as banks; REITs valued as banks;
+  Beneish dropping missing indices as 0.
 
-Banks were the exception, and the reason they had been invisible was a
-data bug: JPM, Goldman, Morgan Stanley and Wells Fargo tag total net revenue
-as `RevenuesNetOfInterestExpense`, which the revenue chain lacked, so their
-packages silently fell back to the last quarter with revenue — 2014 for
-JPM. That tag now leads the chain, and a package whose latest usable period
-trails its latest balance sheet by more than 200 days is refused rather
-than read as current. Financials are now valued the way the textbooks value
-a lender — justified P/B = (ROE − g) / (Ke − g), with the median ROE of the
-history as the sustainable rate and the CAPM cost of equity (Damodaran,
-*Investment Valuation*, ch. 21) — scored on ROE against the cost of equity
-and on equity-to-assets, with cash-flow and accrual measures withheld as
-meaningless for a bank. Specified from the textbook before any test and
-not tuned, the valuation pillar built on it ranks financial-sector returns
-in both windows: 12-month IC +0.15 (t = 5.9) in 2013-2019 and +0.17
-(t = 4.9) in 2020-2025. The fair-value upside alone does too (+0.14 and
-+0.11), its cheapest quintile ahead of the dearest by 8.8pp and 5.9pp a
-year, positive in 11 of 13 years. The banks that failed in 2023 (SVB, First Republic,
-Signature) are not in the data, so the later window is somewhat flattering.
-
-The same idea was tried for everything else with the key value driver
-formula, EV = NOPAT × (1 − g/ROIC) / (WACC − g) (Koller, Goedhart & Wessels,
-*Valuation*), on median operating margin and median ROIC, with a ship
-criterion written down first: positive 12-month IC at t ≥ 2 in both
-windows. It failed (2013-2019 IC −0.01, sector-neutral −0.02), so the
-headline fair value for non-financials is still the historical-multiple
-reversion and the value-driver estimate is only reported alongside it
-(`value_driver` in the valuation output). Book value and return on equity
-describe a lender far better than a steady-state profit formula describes a
-company whose value sits in intangibles and growth.
-
-Insider buying was the last candidate for the value-trap problem: the one
-forward-looking fact in the public record. `insider.py` reads the SEC Form
-3/4/5 data sets (2012 onward, about 330,000 open-market trades by officers
-and directors of the backtest universe) and counts a trade only once it was
-filed. Against criteria written beforehand it failed: the 12-month IC of
-the number of insider buyers is +0.009 (t = 0.5) in 2013-2019, and cheap
-names with insider buyers beat cheap names without them by 6.9pp over two
-years in 2013-2019 but trailed them by 1.4pp in 2020-2025. The later window
-alone looks better (IC +0.047, t = 2.5), which is exactly the kind of result
-the development/holdout split exists to keep out of the product.
-
-Mid and small caps were tested last, on the S&P 400 and S&P 600 as they
-stood on each date, rebuilt from the dated addition and removal tables on
-their Wikipedia pages (S&P 400 from 2012, S&P 600 from December 2019, so
-the 2013-2019 window is S&P 400 only, about 200 names a date). Two results
-held against criteria written before the 2020-2025 look:
-
-- **Net share issuance** (Pontiff & Woodgate 2008), invisible among large
-  caps, ranks mid/small returns: 12-month IC −0.049 (t = −2.5) in
-  2013-2019 and −0.087 (t = −3.0) in 2020-2025. Each verdict now reports
-  the last year's net issuance as a measured read, with that scope stated.
-- **The bank justified P/B** replicates in a third universe: within
-  financials +0.125 (t = 2.6) and +0.139 (t = 4.8).
-
-The overall score, the reversion fair value and the remaining anomalies show
-no edge there either. `--universe midsmall` reproduces the run; research
-universes write `backtest_summary_<universe>.json` so they never change the
-S&P 500 evidence the verdict cites.
+Not fixed: survivorship and renamed tickers (needs paid data), regulated
+utilities and REITs lack a sector valuation model (they mostly read
+"fiyatlanamaz"), a dozen companies whose debt tags cannot be read are not
+valued, and insurers are still valued with the bank model.
 
 **Forward tracking.** With the holdout spent, the only clean test left is
 the future. `tracking.py snapshot` freezes the current screen with its

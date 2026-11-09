@@ -54,10 +54,16 @@ HORIZON = 10
 
 def quote(ticker):
     req = urllib.request.Request(QUOTE_URL % ticker, headers={"User-Agent": UA})
-    try:
-        d = json.loads(urllib.request.urlopen(req, timeout=20).read())
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
-        raise RuntimeError("fiyat alinamadi: %s" % exc)
+    # One retry: a screen fetches hundreds of quotes in parallel and Yahoo
+    # answers the occasional one with a transient error.
+    for attempt in (1, 2):
+        try:
+            d = json.loads(urllib.request.urlopen(req, timeout=20).read())
+            break
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+            if attempt == 2:
+                raise RuntimeError("fiyat alinamadi: %s" % exc)
+            time.sleep(1.5)
     meta = d["chart"]["result"][0]["meta"]
     closes = [c for c in d["chart"]["result"][0]["indicators"]["quote"][0]["close"]
               if c is not None]
@@ -189,7 +195,17 @@ def cost_of_capital(pkg, mcap, debt, market=None):
     # it never is -- Exxon prints 0.18 over this window. Flooring the beta
     # rather than the premium is the lighter of the two conventions and keeps
     # low-beta defensives from being discounted almost like a bond.
-    beta_used = max(b["beta"], BETA_FLOOR)
+    # Blume (1971) adjustment, the convention behind published adjusted
+    # betas: raw regression betas drift toward 1, so 2/3 raw + 1/3 market.
+    # Insurers get a floor of 0.8: catastrophe risk does not move with the
+    # market, so a regressed beta of 0.2 understates what holders require.
+    adjusted = 0.67 * b["beta"] + 0.33
+    sic = pkg["company"].get("sic")
+    try:
+        insurer = 6300 <= int(sic) <= 6499
+    except (TypeError, ValueError):
+        insurer = False
+    beta_used = max(adjusted, 0.8 if insurer else BETA_FLOOR)
     ke = rf + beta_used * EQUITY_RISK_PREMIUM
     tax = m.get("effective_tax_rate")
     tax = 0.21 if tax is None or not 0 <= tax <= 0.5 else tax
@@ -202,7 +218,9 @@ def cost_of_capital(pkg, mcap, debt, market=None):
         # Interest expense is recoverable from the coverage ratio and
         # operating income, both already computed.
         kd = (op * rev / interest) / debt
-    if kd is None or not 0.01 < kd < 0.20:
+    # Reported interest over debt can sit below the risk-free rate when
+    # interest is capitalised (Exxon: 1.5%); no company borrows below it.
+    if kd is None or not rf < kd < 0.20:
         kd = max(rf + 0.01, 0.035)
 
     equity_w = mcap / (mcap + (debt or 0))
@@ -246,6 +264,18 @@ def _dcf(fcf0, growth, wacc, years=HORIZON, terminal=TERMINAL_GROWTH):
         pv += fcf / (1 + wacc) ** year
     tv = fcf * (1 + terminal) / (wacc - terminal)
     return pv + tv / (1 + wacc) ** years
+
+
+def path_cagr(first_year_growth, years=HORIZON, terminal=TERMINAL_GROWTH):
+    """Average yearly growth of the fading path `_dcf` uses. The reverse
+    DCF solves for the first year's rate; comparing that with a flat
+    historical CAGR overstates what the price asks for (Coca-Cola: 16% in
+    year one is about 9% a year over the horizon)."""
+    level = 1.0
+    for year in range(1, years + 1):
+        g = first_year_growth + (terminal - first_year_growth) * (year - 1) / max(1, years - 1)
+        level *= 1 + g
+    return round(level ** (1 / years) - 1, 4)
 
 
 def implied_growth(target_ev, fcf0, wacc):
@@ -325,13 +355,14 @@ def historical_multiple(pkg, shares, asof=None):
     # a decade of a 2-3% yield -- and pulled every fair value down with them.
     series, splits = payload["raw"], payload["splits"]
 
-    fcf_series = (pkg["trends"].get("fcf_ttm") or {}).get("series") or []
+    fcf_series = (pkg["trends"].get("fcff_ttm") or {}).get("series") or []
     debt_series = dict((pkg["trends"].get("net_debt") or {}).get("series") or [])
     debt_now = pkg["latest_metrics"].get("net_debt") or 0
     share_hist = shares_series(pkg["company"]["cik"], asof)
 
     observations = []
-    for date_str, fcf in fcf_series:
+    for date_str, _spot in fcf_series:
+        fcf = _normalised_at(pkg, date_str)
         if not fcf or fcf <= 0:
             continue
         # Filings land about a month after period end, so the multiple the
@@ -515,18 +546,34 @@ def normalized_fcf(pkg):
     to current revenue keeps the scale current while removing the cycle --
     the earnings-power idea from Greenwald rather than a spot multiple.
     """
-    series = (pkg["trends"].get("fcf_margin") or {}).get("series") or []
+    series = (pkg["trends"].get("fcff_margin") or {}).get("series") or []
     margins = sorted(v for _, v in series if v is not None)
     revenue = pkg["latest_metrics"].get("revenue_ttm")
-    spot = pkg["latest_metrics"].get("fcf_ttm")
+    spot = pkg["latest_metrics"].get("fcff_ttm")
     if len(margins) < 8 or not revenue:
-        return {"base": spot, "method": "son 12 aylik serbest nakit akisi (yetersiz gecmis)"}
+        return {"base": spot, "method": "son 12 aylik firma serbest nakit akisi (yetersiz gecmis)"}
     median = margins[len(margins) // 2]
     return {"base": median * revenue,
             "spot": spot,
             "median_margin": round(median, 4),
-            "method": "medyan FCF marji (%.1f%%) x son 12 aylik gelir"
+            "method": "medyan firma serbest nakit akisi marji (%.1f%%) x son 12 aylik gelir"
                       % (median * 100)}
+
+
+def _normalised_at(pkg, date):
+    """Normalised FCFF as it would have been computed on `date`: the median
+    FCFF margin of the quarters up to that date times that date's revenue.
+    The historical multiple divides by this, so its denominator is the same
+    kind of number as today's -- before, past multiples used spot FCF and
+    today's used the normalised figure, which moved Coca-Cola's premium to
+    its own history from about +12% to +38%."""
+    margins = [v for d, v in (pkg["trends"].get("fcff_margin") or {}).get("series") or []
+               if d <= date and v is not None]
+    revenue = dict((pkg["trends"].get("revenue_ttm") or {}).get("series") or []).get(date)
+    if len(margins) < 4 or not revenue:
+        return None
+    margins.sort()
+    return margins[len(margins) // 2] * revenue
 
 
 def _hist_growth(pkg, key="fcf_ttm", years=5):
@@ -600,6 +647,8 @@ def value(pkg, market=None):
         "ev_ebitda": _pos_div(ev, ebitda),
         "ev_sales": _pos_div(ev, rev),
         "fcf_yield": _pos_div(fcf, mcap, 4),
+        "fcff_yield": _pos_div(normalized_fcf(pkg)["base"], ev, 4)
+                      if ev and ev > 0 else None,
         "earnings_yield": _pos_div(ni, mcap, 4),
     }
 
@@ -630,6 +679,8 @@ def value(pkg, market=None):
                                "growth_used": round(g, 4)}
             dcf[label] = {"wacc": round(rate, 4), **band}
         dcf["implied_growth"] = implied_growth(ev if ev else mcap, fcf_base, wacc)
+        if dcf["implied_growth"] is not None:
+            dcf["implied_growth_cagr"] = path_cagr(dcf["implied_growth"])
 
         # The headline estimate: the computed discount rate applied to the
         # company's own realised cash-flow growth. Everything else in the

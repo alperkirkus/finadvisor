@@ -77,15 +77,15 @@ def _horizon_label(cell):
 
 
 # How the justified P/B ranked returns within each kind of financial firm
-# (valuation-pillar IC, 12 months, S&P 500 + S&P 400/600 members, measured
-# November 2026). The pooled financial result holds in both windows; the
-# sub-groups do not all hold on their own, and the reader should know which.
+# (valuation-pillar IC, 12 months, S&P 500 + S&P 400/600 members, regenerated
+# after the November 2026 review). 2020-2025 has been looked at more than
+# once, so it is a second in-sample window, not a holdout.
 BANK_SUBGROUP_NOTES = [
-    ((6000, 6199), "Bankalarda: 2013-2019 IC +0.06 (anlamsız), 2020-2025 +0.12 (t 3.5)."),
-    ((6200, 6299), "Aracı kurum ve varlık yöneticilerinde: 2013-2019 IC 0.00, "
-                   "2020-2025 +0.08 (anlamsız) -- bu grupta kanıt zayıf."),
-    ((6300, 6499), "Sigortacılarda: 2013-2019 IC +0.13 (t 2.2), ama 2020-2025'te "
-                   "+0.04 (anlamsız) -- yöntem sigortacılarda son dönemde zayıfladı."),
+    ((6000, 6199), "Bankalarda: 2013-2019 IC +0.09 (t 2.5), 2020-2025 +0.16 (t 4.6)."),
+    ((6200, 6299), "Aracı kurum ve varlık yöneticilerinde: 2013-2019 IC −0.13, "
+                   "2020-2025 +0.06 (ikisi de anlamsız) -- bu grupta kanıt yok."),
+    ((6300, 6499), "Sigortacılarda: 2013-2019 IC +0.11 (t 1.7), 2020-2025 +0.08 "
+                   "(t 1.9) -- yön tutarlı ama iki dönemde de anlamlı değil."),
 ]
 
 
@@ -114,6 +114,8 @@ def fair_value_read(val):
     pvf = (val or {}).get("price_vs_fair")
     table = (_summary() or {}).get("fair_value_table")
     method = "bank" if (val or {}).get("bank") else "reversion"
+    if method == "reversion" and not (val or {}).get("reversion"):
+        return None     # headline came from the DCF; no measured record for it
     bands = ((table or {}).get("methods") or {}).get(method) or {}
     band = upside_band(upside)
     if band is None or not pvf or not bands.get(band):
@@ -173,8 +175,8 @@ def risk_cell(volatility):
     """The risk group a company falls in; the backtest tabulates the same key.
 
     Only a split whose elevated fall rate held in both the 2013-2019
-    development window and the 2020-2025 holdout is made: trailing annual
-    volatility of 35% or more (about 2.4x the universe rate, then 1.4x). A
+    development window and 2020-2025 is made: trailing annual volatility
+    of 35% or more (about 2.3x the universe rate, then 1.4x). A
     weak business score did not hold up on its own (1.6x, then 1.0x) and
     did not add consistently on top of volatility, so it is not used.
     """
@@ -207,16 +209,17 @@ def issuance_read(val):
     return {"key": "issuance", "name": "Net hisse ihracı (12 ay)", "value": x, "state": state,
             "tone": tone, "reading": reading,
             "evidence": ("Backtest: S&P 400/600 şirketlerinde hisse ihraç "
-                         "edenler sonraki 12 ayda geride kaldı (IC −0.049, t −2.5 "
-                         "2013-2019; −0.087, t −3.0 2020-2025). S&P 500 "
-                         "şirketlerinde etki görülmedi (IC −0.02); büyük "
-                         "şirketlerde bu okuma bilgi amaçlıdır.")}
+                         "edenler sonraki 12 ayda geride kaldı (IC −0.06, t −3.0 "
+                         "2013-2019; −0.08, t −2.9 2020-2025). S&P 500 "
+                         "şirketlerinde yalnızca 2020-2025'te görüldü (IC −0.09, "
+                         "t −2.9; 2013-2019'da −0.02). Çok sayıda sinyal "
+                         "denendiği için tek başına güçlü kanıt değildir.")}
 
 
 def fall_risk(val):
     """Measured base rate of a >25% fall over 12 months for companies like this.
 
-    The backtest's one finding that survived its holdout is about risk, not
+    The backtest's most consistent finding (both windows) is about risk, not
     return: high trailing volatility goes with more frequent large falls.
     This reports the development-window rate for the company's group -- a
     base rate, not a forecast.
@@ -235,8 +238,8 @@ def fall_risk(val):
     state, tone, note = {
         "normal": ("normal", "neutral", "Yüksek oynaklık işareti yok."),
         "high_vol": ("yüksek", "critical",
-                     "Yüksek oynaklıklı şirketler 2020-2025 kontrol "
-                     "döneminde de evrenden sık düştü."),
+                     "Yüksek oynaklıklı şirketler 2020-2025'te de "
+                     "evrenden sık düştü (1.4 kat)."),
     }[key]
     return {"key": "fall_risk", "name": "12 ayda %25+ düşüş riski", "value": rate,
             "state": state, "tone": tone,
@@ -489,7 +492,15 @@ def quality(pkg, val):
         parts["roic_stability"] = steady
         reasons.append("roic istikrarı %.0f/100 (10 yıllık dalgalanma)" % steady)
 
-    return _weighted("Kalite", "quality", parts, reasons)
+    out = _weighted("Kalite", "quality", parts, reasons)
+    # Earning less than the cost of capital is the lead test; a business
+    # failing it is not "strong" however steady its margins.
+    if (roic is not None and wacc and roic < wacc and out["score"] is not None
+            and out["score"] >= PASS):
+        out["score"], out["band"] = PASS - 5.0, "orta"
+        out["reasons"] = out["reasons"] + ["roic sermaye maliyetinin altında: "
+                                           "kalite 'güçlü' sayılmadı"]
+    return out
 
 
 def _bank_quality(pkg, val):
@@ -548,8 +559,10 @@ def safety(pkg, val):
 
     cov = m.get("interest_coverage")
     if cov is not None:
+        # Regulated utilities run at 2-3x coverage by design.
+        lo_c, hi_c = (1.5, 4.0) if sector == "utility" else (1.0, 8.0)
         parts["interest_coverage"] = _blend(pkg, "interest_coverage",
-                                            _scale(cov, 1.0, 8.0))
+                                            _scale(cov, lo_c, hi_c))
         reasons.append("faiz karşılama %.2f" % cov)
 
     lev = m.get("net_debt_to_ebitda")
@@ -557,8 +570,8 @@ def safety(pkg, val):
         # Utilities, telecom and real estate carry structurally more debt per
         # unit of EBITDA, so the band shifts rather than marking every
         # regulated business unsafe.
-        ceiling = 6.0 if sector in ("utility", "real_estate") else 5.0
-        floor = 2.0 if sector in ("utility", "real_estate") else 0.5
+        ceiling = {"utility": 8.0, "real_estate": 7.0}.get(sector, 5.0)
+        floor = {"utility": 4.0, "real_estate": 3.0}.get(sector, 0.5)
         parts["net_debt_to_ebitda"] = _blend(pkg, "net_debt_to_ebitda",
                                              _scale(lev, ceiling, floor))
         reasons.append("net borç/FAVÖK %.2f" % lev)
@@ -630,10 +643,11 @@ def valuation(pkg, val):
         return _bank_valuation(val)
 
     mos = val.get("margin_of_safety")
-    fcf_yield = val["multiples"].get("fcf_yield")
-    implied = (val.get("dcf") or {}).get("implied_growth")
+    fcf_yield = val["multiples"].get("fcff_yield")
+    implied = (val.get("dcf") or {}).get("implied_growth_cagr")
     historical = val["assumptions"].get("historical_fcf_growth")
     wacc = val["assumptions"]["wacc"]
+    terminal = val["assumptions"].get("terminal_growth", 0.025)
     parts, reasons = {}, []
 
     if fcf_yield is None or fcf_yield < 0.01:
@@ -646,8 +660,9 @@ def valuation(pkg, val):
     if implied is not None and historical is not None:
         gap = historical - implied
         parts["implied_vs_history"] = _scale(gap, -0.12, 0.06)
-        reasons.append("fiyat %.1f%% yıllık FCF büyümesi ima ediyor, şirketin "
-                       "geçmişi %.1f%%" % (implied * 100, historical * 100))
+        reasons.append("fiyat önümüzdeki 10 yılda yılda ortalama %.1f%% büyüme "
+                       "ima ediyor, şirketin geçmiş gelir büyümesi %.1f%%"
+                       % (implied * 100, historical * 100))
     elif implied is not None:
         parts["implied_vs_history"] = _scale(implied, 0.20, 0.03)
         reasons.append("fiyatın ima ettiği büyüme %.1f%%" % (implied * 100))
@@ -671,9 +686,14 @@ def valuation(pkg, val):
                        % (mos * 100))
 
     if fcf_yield is not None:
-        parts["fcf_yield_vs_wacc"] = _scale(fcf_yield - wacc, -0.06, 0.03)
-        note = ("FCF getirisi %.1f%% vs sermaye maliyeti %.1f%%"
-                % (fcf_yield * 100, wacc * 100))
+        # Gordon: a fairly priced firm yields WACC - g. Scored on how far the
+        # FCFF yield sits from that, with g the terminal rate, so a growing
+        # firm is not marked down merely for yielding less than its WACC.
+        fair_yield = wacc - terminal
+        parts["fcf_yield_vs_wacc"] = _scale(fcf_yield - fair_yield, -0.04, 0.02)
+        note = ("firma nakit getirisi %.1f%% vs uzun vadede adil getiri %.1f%% "
+                "(sermaye maliyeti − %.1f%% büyüme)"
+                % (fcf_yield * 100, fair_yield * 100, terminal * 100))
         # A cash yield below the government bond is worth naming explicitly:
         # at that point the entire case rests on growth, since the security
         # pays less than the risk-free alternative today.
@@ -836,7 +856,7 @@ def assess(pkg, val=None):
                  "tanimli kriterlere gore mali durumun yapilandirilmis bir "
                  "okumasidir; getiri tahmini degildir. Bilesik skorun ileri "
                  "getiriyle olculmus siralama gucu yoktur (S&P 500 "
-                 "uyeleri uzerinde IC +0.01); skor yalnizca karlilik "
+                 "uyeleri uzerinde IC +0.02, anlamsiz); skor yalnizca karlilik "
                  "faktorune egilim tasir. Tahakkuk orani 'olculmus "
                  "sinyaller' bolumunde ayrica gosterilir.",
         "disclaimer": "Bu bir analiz araci ciktisidir. Yatirim danismanligi, "
@@ -917,6 +937,28 @@ def plain_summary(pkg, val, label, business_score, signals):
     return out
 
 
+QUALITY_PARTS = {
+    "roic_spread": "sermaye getirisi sermaye maliyetine göre zayıf",
+    "operating_margin": "faaliyet marjı düşük",
+    "roic_trend": "sermaye getirisi geriliyor",
+    "roic_stability": "sermaye getirisi yıllar içinde çok dalgalı",
+}
+
+
+def _quality_block_text(business):
+    """The block names the components that actually scored low -- Exxon
+    used to read "does not cover its cost of capital" while earning 1.8
+    points above it, blocked in fact by a volatile, falling ROIC."""
+    pillar = next(p for p in business if p["name"] == "Kalite")
+    weak = [QUALITY_PARTS[k] for k, v in sorted(pillar.get("components", {}).items(),
+                                                key=lambda kv: kv[1])
+            if v < WEAK and k in QUALITY_PARTS]
+    detail = "; ".join(pillar["reasons"][:2])
+    return ("İşletme kalitesi eşiğin altında (%.0f/100): %s. %s."
+            % (pillar["score"], ", ".join(weak) or "bileşenler birlikte zayıf",
+               detail))
+
+
 def by_name_reasons(pillars, name):
     for p in pillars:
         if p["name"] == name:
@@ -981,9 +1023,7 @@ def _decide_rest(pkg, business, business_score, price, failing):
                                      "Finansman baskısı altındaki bir şirkette "
                                      "değerleme ikincil bir sorudur.")
     if "Kalite" in failing:
-        detail = "; ".join(by_name_reasons(business, "Kalite")[:2])
-        return "yatirim yapilamaz", ("İşletme sermaye maliyetini karşılamıyor: "
-                                     "%s." % detail)
+        return "yatirim yapilamaz", _quality_block_text(business)
 
     by_name = {p["name"]: p for p in business}
     if price.get("debt_unknown"):

@@ -10,7 +10,8 @@ import sys
 import edgar
 import metrics as M
 
-TREND_KEYS = ["revenue_ttm", "net_income_ttm", "fcf_ttm", "ebitda_ttm",
+TREND_KEYS = ["revenue_ttm", "net_income_ttm", "fcf_ttm", "fcff_ttm",
+              "fcff_margin", "ebitda_ttm",
               "net_debt",
               "gross_margin", "operating_margin", "net_margin",
               "fcf_margin", "roe", "roic", "accrual_ratio", "current_ratio",
