@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Weekly forward-tracking snapshot. Not installed by anything in this
+  repository. To install, replace __REPO__ with the absolute path of the
+  checkout and load it:
+
+    sed "s|__REPO__|$PWD|g" scripts/snapshot.plist > ~/Library/LaunchAgents/com.finadvisor.snapshot.plist
+    launchctl load ~/Library/LaunchAgents/com.finadvisor.snapshot.plist
+
+  launchd runs a missed date at the next wake. The job rebuilds the screen
+  when it is more than a day old (about three minutes) and writes nothing
+  when the week already has a snapshot. Monday morning, so the prices are
+  Friday's close.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.finadvisor.snapshot</string>
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO__/.venv/bin/python</string>
+    <string>src/tracking.py</string>
+    <string>snapshot</string>
+    <string>--weekly</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>1</integer>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__REPO__/tracking/snapshot.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/tracking/snapshot.log</string>
+</dict>
+</plist>

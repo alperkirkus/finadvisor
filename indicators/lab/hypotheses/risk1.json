@@ -1,0 +1,482 @@
+[
+  {
+    "id": "risk_range_plus_own_surprise",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(ts_z(range14, 60))",
+    "horizon": 250,
+    "rationale": "Plain range cannot tell a stock that is always volatile from one whose range has just jumped against its own last quarter; the jump marks new uncertainty that the level has not yet fully reflected. Range stays the core, the own-history z-score is a small tilt.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_floor",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(ts_min(range14, 60))",
+    "horizon": 250,
+    "rationale": "The lowest range a stock reached in a quarter shows whether its volatility is structural or a passing episode; a high floor means the risk never went away, which should matter more over a one-year horizon than today's reading.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_drawdown",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-high_gap250)",
+    "horizon": 250,
+    "rationale": "Two stocks with the same range differ if one is already far below its year high: the fall has raised its leverage and shaken its holders, information about state that range does not contain. Small weight so it does not drown the core as the equal-weight trend blend did.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_trend_break",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-ma_cross)",
+    "horizon": 250,
+    "rationale": "The 50/200-day spread is the slowest trend measure available and turns negative only after a sustained deterioration; at equal weight trend diluted range, so this tests whether a light tilt toward broken long trends adds anything at all.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_down_volume",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-ts_mean(updown, 60))",
+    "horizon": 250,
+    "rationale": "Range is direction-free; a quarter in which volume concentrated on down days says the turbulence is being produced by sellers, which is the kind that precedes large falls rather than large rallies.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_weak_closes",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-ts_mean(clv5, 60))",
+    "horizon": 250,
+    "rationale": "Where the close sits inside the daily range is exactly the information the range throws away; a quarter of closes near the lows means each day's range was resolved downward, i.e. persistent selling into the close.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_worst_gap",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-ts_min(gap, 60))",
+    "horizon": 250,
+    "rationale": "The worst opening gap of the quarter records a discrete bad-news event (earnings miss, guidance cut, legal shock); a 14-day average range forgets it within weeks, while such events tend to come in series.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_illiquidity",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-liquidity)",
+    "horizon": 250,
+    "rationale": "The least traded index members are the smallest and closest to deletion, with fewer buyers when holders want out; for the same range their falls go further, and dollar volume is not a volatility measure so it should not simply duplicate the core.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_loss_acceleration",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(lag(ret60, 60) - ret60)",
+    "horizon": 250,
+    "rationale": "A last quarter that was much worse than the one before means the stock's situation is deteriorating at an increasing rate; range reports the turbulence but not whether the path is bending downward.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_downside_share",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(ts_mean(minimum(ret1, 0) ** 2, 60) / ts_mean(ret1 ** 2, 60))",
+    "horizon": 250,
+    "rationale": "The share of a quarter's variance that came from down days separates volatility made of bad news from volatility made of good news; the same range is more dangerous when most of it was earned on the way down.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_near_year_low",
+    "type": "risk",
+    "expr": "rank(range14) * (1 + 0.5 * (low_gap250 < 0.05))",
+    "horizon": 250,
+    "rationale": "A stock within 5% of its 52-week low has no recent buyers in profit and is where stop-losses and mandate-driven selling sit; the same range is scaled up by half there, leaving the ranking by range intact everywhere else.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_volume_trend",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(vol_trend)",
+    "horizon": 250,
+    "rationale": "Volume rising above its half-year average means ownership is turning over; a wide range together with a change of hands signals that long-term holders are leaving, which range alone cannot show.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_year_loss",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-ret250)",
+    "horizon": 250,
+    "rationale": "A large one-year loss is the market's own verdict on the business and raises financial leverage mechanically; it is the return leg of a distance-to-default measure, added here lightly instead of at the full weight that failed before.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_overnight_share",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(ts_mean(abs(gap), 60) / ts_mean(range14, 60))",
+    "horizon": 250,
+    "rationale": "When a large part of a stock's movement happens between close and open it is driven by discrete news rather than trading noise; news-driven risk produces the jumps that make up most 25% falls, and the gap share is independent of the range level.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_volume_shock",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(ts_max(rvol, 60))",
+    "horizon": 250,
+    "rationale": "The largest volume spike of the quarter marks a company that has had a major event; event-prone companies keep having events, and a single day of five times normal volume barely moves a 14-day average range.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_crash_month",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-ts_min(ret20, 60))",
+    "horizon": 250,
+    "rationale": "The worst 20-day return inside the last quarter shows whether the stock has already had one crash; crashes cluster, and after the range has calmed the memory of that month is the only trace left.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_time_under_average",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(-ts_mean(sign(ma_gap50), 60))",
+    "horizon": 250,
+    "rationale": "The share of the last quarter spent below the 50-day average measures how persistent the weakness is, not how deep; a volatile stock that cannot get back above its average for months is being sold steadily.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_extreme_year",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(abs(ret250))",
+    "horizon": 250,
+    "rationale": "A very large one-year move in either direction means the valuation has been repriced hard and is unsettled: big losers can go to zero and big winners have furthest to fall. This adds a yearly-scale instability measure that a 14-day range cannot see.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_strong_downtrend",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(adx * sign(-ma_gap50))",
+    "horizon": 250,
+    "rationale": "Trend strength signed by direction separates a volatile stock in an orderly, strong decline from one that is merely noisy; a strong directional decline is price discovery of bad news rather than turbulence.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_intraday_excess",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(range14 / vol20)",
+    "horizon": 250,
+    "rationale": "Range beat close-to-close volatility by 0.037, so the part of range that closes do not show may be where the information is: large intraday swings that reverse by the close indicate thin order books and disagreement, typical of stressed names.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_quarter_mean",
+    "type": "risk",
+    "expr": "ts_mean(range14, 60)",
+    "horizon": 250,
+    "rationale": "A one-year outcome depends on the stock's lasting volatility level, and a 14-day average still carries the noise of the last few weeks; averaging it over a quarter should be a cleaner estimate of the same quantity.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_quarter_peak",
+    "type": "risk",
+    "expr": "ts_max(range14, 60)",
+    "horizon": 250,
+    "rationale": "The highest range reached in the quarter shows how turbulent the stock can become under stress; a stock that has calmed down since an episode is ranked low by current range although it has just shown what it is capable of.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_worse_of_short_long",
+    "type": "risk",
+    "expr": "maximum(range14, ts_mean(range14, 60))",
+    "horizon": 250,
+    "rationale": "Taking the larger of the current and the quarterly range reacts at once when risk rises but does not forget when it falls, matching the asymmetry of risk: volatility spikes fast and decays slowly in its consequences.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_half_year_mean",
+    "type": "risk",
+    "expr": "ts_mean(range14, 60) + lag(ts_mean(range14, 60), 60)",
+    "horizon": 250,
+    "rationale": "Two consecutive quarterly averages give roughly a half-year range, the longest direct average the language allows; if longer smoothing is better because the target is a full year ahead, this should improve again on the quarterly mean.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_gap_size",
+    "type": "risk",
+    "expr": "range14 + ts_mean(abs(gap), 60)",
+    "horizon": 250,
+    "rationale": "Overnight gaps cannot be traded out of and are where most single-day collapses occur; adding the average gap size to the range gives overnight movement extra weight relative to intraday movement in the same units.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_downside_deviation",
+    "type": "risk",
+    "expr": "ts_mean(minimum(ret1, 0) ** 2, 60) ** 0.5",
+    "horizon": 250,
+    "rationale": "A downside-only volatility over a quarter measures exactly the kind of movement the target is about and ignores turbulence from rallies; if the direction of volatility matters this should beat a direction-free range.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_blend_smoothed_vol",
+    "type": "risk",
+    "expr": "rank(range14) + 0.3 * rank(ts_mean(vol20, 60))",
+    "horizon": 250,
+    "rationale": "Close-to-close volatility lost to range when both were short-window estimates, but averaged over a quarter it is a far less noisy and partly independent reading of the same risk; at a third of the weight it can only refine the core.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_geometric_short_long",
+    "type": "risk",
+    "expr": "(range14 * ts_mean(range14, 60)) ** 0.5",
+    "horizon": 250,
+    "rationale": "The geometric mean of current and quarterly range requires both to be high for a top score, damping one-off spikes and stale averages alike; it is the balanced alternative to taking the worse of the two.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_five_day",
+    "type": "risk",
+    "expr": "range_ratio * ts_mean(range14, 60)",
+    "horizon": 250,
+    "rationale": "Scaling the quarterly range by the 5-to-60-day range ratio approximates a 5-day range, the fastest estimate available; it tests the opposite direction to the longer averages, in case the freshest information is what carries the signal.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_quarter_floor",
+    "type": "risk",
+    "expr": "ts_min(range14, 60)",
+    "horizon": 250,
+    "rationale": "The calmest reading of the quarter is a robust estimate of permanent volatility, untouched by any episode; if falls come from structurally volatile businesses rather than from recent turbulence, the floor alone should rank better than the current value.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_year_normal",
+    "type": "risk",
+    "expr": "range14 / squeeze",
+    "horizon": 250,
+    "rationale": "Dividing by the ratio of current band width to its own 250-day mean removes the part of range that is unusual for this stock and leaves its year-typical level, the only way in this language to reach a one-year volatility estimate that matches the horizon of the target.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_mean_abs_return_quarter",
+    "type": "risk",
+    "expr": "ts_mean(abs(ret1), 60)",
+    "horizon": 250,
+    "rationale": "The mean absolute daily return over a quarter is a close-to-close estimate that is robust to single outliers and three times longer than vol20; it shows whether vol20 lost to range because closes carry less information or only because its window was short and squared.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_mean_plus_tail",
+    "type": "risk",
+    "expr": "rank(ts_mean(range14, 60)) + 0.3 * rank(ts_max(abs(ret1), 60))",
+    "horizon": 250,
+    "rationale": "An average describes ordinary days, while a 25% fall is a tail outcome; adding the largest single-day move of the quarter to the quarterly range brings in the fatness of the tail, which two stocks with the same average can differ on.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_plus_down_gaps",
+    "type": "risk",
+    "expr": "range14 + 2 * ts_mean(maximum(-gap, 0), 60)",
+    "horizon": 250,
+    "rationale": "Only downward opening gaps are added to the range, at double weight: they are the footprints of bad news released outside trading hours, and a stock that keeps opening lower is being repriced on fundamentals rather than traded noisily.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_weekly_scale_volatility",
+    "type": "risk",
+    "expr": "ts_mean(abs(ret5), 60)",
+    "horizon": 250,
+    "rationale": "Volatility measured on weekly returns keeps moves that persist across days and cancels daily back-and-forth; a year-long fall is made of persistent moves, so the lower-frequency estimate may be closer to the risk that matters than any daily range.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_times_downtrend",
+    "type": "risk",
+    "expr": "rank(range14) * rank(-ma_gap200)",
+    "horizon": 250,
+    "rationale": "As a product, trend cannot lift a calm stock to the top the way the equal-weight sum did: the score is high only when range is high and the stock is below its 200-day, so it tests whether range is more dangerous in a downtrend without diluting it.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_times_illiquidity",
+    "type": "risk",
+    "expr": "rank(range14) * (0.5 + rank(-liquidity))",
+    "horizon": 250,
+    "rationale": "Illiquidity scales the range between half and one and a half times instead of adding to it: in a thinly traded member the same turbulence meets fewer buyers, so the conversion of volatility into a large fall should be higher.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_crash_memory",
+    "type": "risk",
+    "expr": "where((ts_min(ret20, 60) < -0.2), ts_max(range14, 60), range14)",
+    "horizon": 250,
+    "rationale": "If the stock lost more than 20% in some month of the last quarter, the score uses the quarter's peak range instead of the current one; after a crash the calm that follows is unreliable and should not be allowed to lower the estimate.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_times_volume_expansion",
+    "type": "risk",
+    "expr": "rank(range14) * (0.5 + rank(vol_trend))",
+    "horizon": 250,
+    "rationale": "A wide range on rising volume is repricing with real participation, while a wide range on falling volume is a thin market moving on little trade; scaling by the volume trend separates the two for the same range.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_times_downside_share",
+    "type": "risk",
+    "expr": "rank(range14) * rank(ts_mean(minimum(ret1, 0) ** 2, 60) / ts_mean(ret1 ** 2, 60))",
+    "horizon": 250,
+    "rationale": "The product is high only when the stock is volatile and its variance sits on down days; it removes from the top of the ranking the volatile stocks whose turbulence came from rallies, which a sum would only partly do.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_trend_switched",
+    "type": "risk",
+    "expr": "where((ma_gap200 < 0), maximum(range14, ts_mean(range14, 60)), ts_mean(range14, 60))",
+    "horizon": 250,
+    "rationale": "Below the 200-day a fresh jump in range is likely the start of something and is taken at once (the worse of current and quarterly); above it a jump is more often an earnings-day blip and only the quarterly average is used.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_leverage_adjusted",
+    "type": "risk",
+    "expr": "range14 / (1 + high_gap250)",
+    "horizon": 250,
+    "rationale": "Dividing by the price as a fraction of its year high scales the range up in proportion to the drawdown: a company whose equity has shrunk carries more debt per unit of equity, so the same range means more distress the further it has fallen.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_scaled_by_close_location",
+    "type": "risk",
+    "expr": "range14 * (1 - ts_mean(clv5, 60))",
+    "horizon": 250,
+    "rationale": "The range is multiplied by a factor that runs from near zero when closes sit at the daily highs to near two when they sit at the lows, turning a direction-free range into the part of the range that sellers won over the quarter.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_stability_weighted",
+    "type": "risk",
+    "expr": "range14 * ts_min(range14, 60) / ts_max(range14, 60)",
+    "horizon": 250,
+    "rationale": "The current range is discounted by how much the stock's range varied over the quarter: a reading that is high and has been steadily high counts in full, one that is a spike inside a wide band of readings counts less.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_or_gap_risk",
+    "type": "risk",
+    "expr": "maximum(rank(range14), rank(ts_mean(abs(gap), 60)))",
+    "horizon": 250,
+    "rationale": "A stock is ranked by whichever is worse, its range or its average overnight gap: some companies trade quietly during the day but reprice in jumps at the open, and an either-or rule catches them without lowering anyone flagged by range.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_expansion_scaled",
+    "type": "risk",
+    "expr": "range14 * clip(range_ratio, 0.8, 1.5)",
+    "horizon": 250,
+    "rationale": "The range is scaled by whether it is currently expanding or contracting against its 60-day level, clipped so the adjustment stays modest; expanding risk is under-stated by a trailing average and contracting risk is over-stated.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_down_volume_switch",
+    "type": "risk",
+    "expr": "rank(range14) * where((ts_mean(updown, 40) < -0.2), 1.3, 1)",
+    "horizon": 250,
+    "rationale": "When down-day volume has clearly dominated for two months the range is scaled up by 30%; the switch only acts on stocks under sustained selling and leaves the range ordering untouched for all others.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_times_near_low",
+    "type": "risk",
+    "expr": "rank(range14) * rank(-low_gap250)",
+    "horizon": 250,
+    "rationale": "Volatile and sitting on its 52-week low is a different state from volatile and well above it: the first has no cushion and no holders in profit, the second is often a recovery. The product keeps only the first at the top.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_times_extension_extremes",
+    "type": "risk",
+    "expr": "rank(range14) * (0.5 + abs(rank(ma_gap200) - 0.5))",
+    "horizon": 250,
+    "rationale": "Range is scaled up at both ends of the trend ranking, for stocks collapsing below their 200-day and for stocks stretched far above it; a wide range in an over-extended stock is a blow-off, which a one-directional trend term would wrongly mark as safe.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_range_times_jump_proneness",
+    "type": "risk",
+    "expr": "rank(range14) * (0.5 + rank(ts_max(abs(ret1), 60) / ts_mean(abs(ret1), 60)))",
+    "horizon": 250,
+    "rationale": "The ratio of the quarter's largest daily move to its average daily move measures how jump-like the stock's risk is; for the same average range, a stock that moves in jumps is the one that can lose a quarter of its value on one announcement.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_year_high_low_width",
+    "type": "risk",
+    "expr": "-(1 + high_gap250) / (1 + low_gap250)",
+    "horizon": 250,
+    "rationale": "The ratio of the 52-week low to the 52-week high is a realised one-year range, the only volatility estimate here measured over the same horizon as the target; if a year-long measure is what matters it could beat a 14-day one without using it.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_vol_gap_drawdown_blend",
+    "type": "risk",
+    "expr": "rank(ts_mean(vol20, 60)) + 0.5 * rank(ts_mean(abs(gap), 60)) + 0.3 * rank(-high_gap250)",
+    "horizon": 250,
+    "rationale": "Built from pieces range does not use directly: a quarter of close-to-close volatility, average overnight gap size and the drawdown from the year high. If these three together match range14, range is one view of volatility; if not, the intraday range itself is special.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_vol_year_normal",
+    "type": "risk",
+    "expr": "vol20 / squeeze",
+    "horizon": 250,
+    "rationale": "Close-to-close volatility with the band-width ratio divided out approximates the stock's year-typical volatility; it tests whether vol20 lost to range14 because of its short window rather than because closes are less informative.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_worst_week_quarter",
+    "type": "risk",
+    "expr": "ts_max(abs(ret5), 60)",
+    "horizon": 250,
+    "rationale": "The largest weekly move of the quarter is a tail measure at a frequency where moves are no longer noise; companies that have produced a 15% week are the ones able to produce a 25% year, whatever their average day looks like.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_drawdown_plus_downside_dev",
+    "type": "risk",
+    "expr": "rank(-high_gap250) + rank(ts_mean(minimum(ret1, 0) ** 2, 60) ** 0.5)",
+    "horizon": 250,
+    "rationale": "Both parts look only at the downside: how far the stock already is below its year high and how violent its down days have been. It asks whether a purely downside description of risk does better than a direction-free range.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_gap_size_alone",
+    "type": "risk",
+    "expr": "ts_mean(abs(gap), 60)",
+    "horizon": 250,
+    "rationale": "The average size of opening gaps over a quarter measures risk that arrives as news outside trading hours and nothing else; if large falls are mostly news events, this single component could rank companies as well as the full range.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_small_and_volatile",
+    "type": "risk",
+    "expr": "rank(ts_mean(vol20, 60)) + 0.5 * rank(-liquidity)",
+    "horizon": 250,
+    "rationale": "Quarterly close-to-close volatility plus a half-weight tilt to the least traded members: size and trading depth are the non-volatility facts most related to who gets hurt, and this checks whether they can make up for not having the intraday range.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_vol_times_downtrend",
+    "type": "risk",
+    "expr": "rank(ts_mean(vol20, 60)) * rank(-ma_gap200)",
+    "horizon": 250,
+    "rationale": "A distance-to-default style measure without range: high sustained volatility and a price below its long average, as a product so both are required. Earlier this kind of measure did not beat volatility as a sum; the product form is the remaining untested version.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_year_width_near_bottom",
+    "type": "risk",
+    "expr": "rank(-(1 + high_gap250) / (1 + low_gap250)) + 0.3 * rank(-low_gap250)",
+    "horizon": 250,
+    "rationale": "The realised one-year high-low range with a light tilt toward stocks sitting near the bottom of it: a wide year that is being resolved downward. Uses only yearly components, so it is the slowest-moving risk measure in the set.",
+    "source": "agent-risk1"
+  },
+  {
+    "id": "risk_no_volatility_composite",
+    "type": "risk",
+    "expr": "rank(-ma_gap200) + rank(-liquidity) + rank(-ts_mean(updown, 60)) + rank(-ts_mean(clv5, 60))",
+    "horizon": 250,
+    "rationale": "A deliberate control with no volatility term at all: trend, trading depth, down-day volume and weak closes. It measures how far everything that is not volatility can go, which shows whether the additions in group A have anything to contribute.",
+    "source": "agent-risk1"
+  }
+]

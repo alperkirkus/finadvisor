@@ -171,14 +171,16 @@ def _legacy(payload):
 
 
 def risk_free_series():
-    """10-year Treasury yield at each month end, {YYYY-MM: decimal}. FRED DGS10."""
+    """10-year Treasury yield, {YYYY-MM: decimal}: the mean of the daily
+    values over the V.RISK_FREE_MONTHS months ending with that month, the
+    rate the product uses. FRED DGS10."""
     os.makedirs(MACRO, exist_ok=True)
     path = os.path.join(MACRO, "DGS10.csv")
     if not os.path.exists(path):
         # FRED stalls requests carrying a browser-like User-Agent; the
         # library default is answered at once.
         _download(FRED_URL, path, user_agent=None)
-    out = {}
+    daily = defaultdict(list)
     with open(path) as fh:
         for row in csv.reader(fh):
             if len(row) != 2 or row[1] in ("", "."):
@@ -189,9 +191,14 @@ def risk_free_series():
                 continue          # header line
             if not math.isfinite(value):
                 continue
-            out[row[0][:7]] = value / 100     # rows are ascending: last wins
-    if not out:
+            daily[row[0][:7]].append(value / 100)
+    if not daily:
         raise ValueError("DGS10 cache at %s has no usable rows" % path)
+    out = {}
+    for month in daily:
+        span = [v for n in range(V.RISK_FREE_MONTHS)
+                for v in daily.get(add_months(month, -n), [])]
+        out[month] = sum(span) / len(span)
     return out
 
 
@@ -282,16 +289,23 @@ def quarter_ends(start_year, end_year):
 # One observation
 
 
-def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
+def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None,
+           prior_band=None, symbol=None, check_size=True):
     """The score the product would have shown on `asof`, plus what followed.
 
     Returns None and counts the reason in `skips` when the date cannot be
     scored; a skipped date is never filled with a substitute value.
+    `prior_band` is the valuation band the company held a quarter earlier,
+    which the verdict's margin reads; the risk line needs the whole date's
+    companies and is applied afterwards, in apply_risk_gate. `symbol` is where the company's prices
+    live when that is not its membership ticker. `check_size` is off for a
+    price history matched to the company itself: the size test catches a
+    reused ticker, and would otherwise drop a member on its way to failing.
     """
     import ranking
 
     try:
-        pkg = report.build(ticker, quarters=40, asof=asof, facts=facts, cik=cik)
+        pkg = report.build(symbol or ticker, quarters=40, asof=asof, facts=facts, cik=cik)
     except ValueError:
         skips["no usable period"] += 1
         return None
@@ -315,7 +329,7 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
         # A ticker later reused by a different company (BB&T's BBT now
         # belongs to a small bank) shows up as a market value no index
         # member could have had; such dates are skipped, not scored.
-        if raw[month] * shares < _WORKER.get("min_cap", 0):
+        if check_size and raw[month] * shares < _WORKER.get("min_cap", 0):
             skips["implausible size (ticker reuse?)"] += 1
             return None
 
@@ -336,7 +350,8 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
         except Exception as exc:
             val_error = "valuation: %s" % exc
 
-    a = VD.assess(pkg, val)
+    a = VD.assess(pkg, val, {"band": prior_band})
+    plain = a["verdict"] if prior_band is None else VD.assess(pkg, val)["verdict"]
     pillars = {PILLAR_KEYS[p["name"]]: p["score"] for p in a["pillars"]
                if p["name"] in PILLAR_KEYS}
 
@@ -352,6 +367,22 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
     momentum = (closes[prior] / closes[start] - 1
                 if prior in closes and start in closes else None)
 
+    volatility = (V.trailing_volatility(closes, month) or {}).get("annualized")
+    year_return = closes[month] / closes[start] - 1 if start in closes else None
+    dtd = None
+    if shares and pkg["company"]["sector_bucket"] != "financial":
+        dtd = V.distance_to_default(raw[month] * shares, m.get("total_debt"),
+                                    volatility, year_return)
+
+    # Phase 17: a sector fair value, recorded and not used by the verdict.
+    sector, sector_fair = pkg["company"]["sector_bucket"], None
+    if shares and sector == "utility" and val:
+        sector_fair = V.justified_pb(pkg, val["cost_of_capital"], shares,
+                                     m.get("net_income_ttm"))
+    elif shares and sector == "real_estate":
+        sector_fair = V.ebitda_reversion(pkg, shares, asof)
+    sector_upside = round(sector_fair["fair"] / raw[month] - 1, 4) if sector_fair else None
+
     forward, bench_forward = {}, {}
     for h in HORIZONS:
         exit_month = add_months(month, h)
@@ -364,9 +395,13 @@ def signal(ticker, facts, asof, payload, bench, rf_series, skips, cik=None):
             "sector": pkg["company"]["sector_bucket"],
             "period_used": pkg["as_of"],
             "verdict": a["verdict"],
+            "verdict_plain": plain,
+            "price_band": a["price_band"],
             "overall": ranking.overall_score(a["business_score"],
                                              pillars.get("valuation")),
-            "volatility": (V.trailing_volatility(closes, month) or {}).get("annualized"),
+            "volatility": volatility,
+            "dtd": dtd,
+            "sector_upside": sector_upside,
             "business_score": a["business_score"],
             **{k: pillars.get(k) for k in PILLAR_KEYS.values()},
             "valuation_error": val_error,
@@ -535,20 +570,25 @@ def _score_ticker(item):
     skips = Counter()
     try:
         facts = edgar.companyfacts(rec["cik"])
-        payload = prices(U.yahoo_symbol(ticker), need_raw=True)
+        payload = prices(rec.get("symbol") or U.yahoo_symbol(ticker), need_raw=True)
     except Exception as exc:
         skips["ticker unavailable"] += 1
         return ticker, [], skips, "%s" % exc
-    rows = []
+    rows, band = [], None
     for asof in _WORKER["dates"]:
         if rec["intervals"] is not None and not U.is_member(rec["intervals"], asof):
+            band = None
             continue
+        row = None
         try:
             row = signal(ticker, facts, asof, payload, _WORKER["bench"],
-                         _WORKER["rf"], skips, cik=rec["cik"])
+                         _WORKER["rf"], skips, cik=rec["cik"], prior_band=band,
+                         symbol=rec.get("symbol"), check_size=not rec.get("outside"))
         except Exception as exc:
             skips["error: %s" % type(exc).__name__] += 1
-            continue
+        # The margin reads the quarter just before; a date that could not
+        # be scored breaks the chain rather than lending an older band.
+        band = row["price_band"] if row else None
         if row:
             rows.append(row)
     return ticker, rows, skips, None
@@ -570,10 +610,42 @@ def run(universe, start=2013, end=2025, workers=None, universe_name="sp500"):
             if i % 50 == 0 or i == len(universe):
                 print("  %d/%d sirket, %d gozlem" % (i, len(universe), len(rows)))
     rows.sort(key=lambda r: (r["asof"], r["ticker"]))
+    apply_risk_gate(rows)
     add_composite(rows)
     add_composite(rows, EVIDENCE_SIGNS, "evidence")
     _add_excess(rows)
     return rows, dict(skips), unavailable
+
+
+def apply_risk_gate(rows):
+    """The verdict's risk rule, with what the backtest has.
+
+    The product does not call a company investable when its daily range is
+    in the top fifth of the day. These price files are monthly, so the top
+    fifth of each date by trailing volatility stands in, with the same
+    margin: once in, a company stays until 5% under the line. Sets
+    `risk_top` on every row and moves the investable ones among them to
+    "kosullu". Rows must be in date order.
+    """
+    by_month = defaultdict(list)
+    for r in rows:
+        by_month[r["month"]].append(r)
+    was_top = {}
+    for month in sorted(by_month):
+        group = by_month[month]
+        vols = sorted(r["volatility"] for r in group if r.get("volatility") is not None)
+        line = vols[len(vols) * 4 // 5] if len(vols) >= MIN_CROSS_SECTION else None
+        before = add_months(month, -3)
+        for r in group:
+            vol = r.get("volatility")
+            top = line is not None and vol is not None and (
+                vol >= line or (was_top.get(r["ticker"]) == before
+                                and vol >= line * (1 - VD.RISK_MARGIN)))
+            r["risk_top"] = top
+            if top:
+                was_top[r["ticker"]] = month
+                if r["verdict"] == "yatirim yapilabilir":
+                    r["verdict"] = "kosullu"
 
 
 def membership_coverage(rows, start=2013, end=2025):
@@ -1242,7 +1314,8 @@ if __name__ == "__main__":
     # own files so a research run never changes what the verdict cites.
     suffix = "" if args.universe == "sp500" else "_" + args.universe
     json.dump(rows, open(os.path.join(DATA, "backtest_rows%s.json" % suffix), "w"))
-    payloads = {t: prices(U.yahoo_symbol(t)) for t in {r["ticker"] for r in rows}}
+    payloads = {t: prices((uni.get(t) or {}).get("symbol") or U.yahoo_symbol(t))
+                for t in {r["ticker"] for r in rows}}
     segments = ("dev",)
     if args.holdout:
         n = _log_holdout_look()

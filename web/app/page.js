@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Search from "../components/Search";
 import Verdict, { Fold } from "../components/Verdict";
 import Interpretation from "../components/Interpretation";
@@ -8,6 +8,7 @@ import Trends from "../components/Trends";
 import MetricTable from "../components/MetricTable";
 import TopPicks from "../components/TopPicks";
 import MarketRegime from "../components/MarketRegime";
+import Signals from "../components/Signals";
 
 function ThemeToggle() {
   const [theme, setTheme] = useState(null);
@@ -35,8 +36,14 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [ticker, setTicker] = useState(null);
+  const [view, setView] = useState({ tab: "companies", market: "sp500", instrument: null });
+  const homeScroll = useRef(0);
+  const shown = useRef(null);
 
   const fetchCompany = useCallback(async (t) => {
+    if (shown.current == null) homeScroll.current = window.scrollY;
+    shown.current = t;
+    window.scrollTo(0, 0);
     setBusy(true); setError(null); setPkg(null); setTicker(t);
     try {
       const r = await fetch(`/api/company/${t}`);
@@ -49,16 +56,30 @@ export default function Page() {
   }, []);
 
   const goHome = useCallback(() => {
+    shown.current = null;
     setPkg(null); setError(null); setBusy(false); setTicker(null);
   }, []);
 
   // The open company lives in the URL (?t=MCD), so the browser's own back and
   // forward buttons work and a company page can be bookmarked or shared.
   useEffect(() => {
-    const t = new URLSearchParams(location.search).get("t");
+    // The home list stays mounted behind a company page and is put back
+    // where it was left; the browser's own restoration would run against a
+    // page whose height has not settled yet.
+    history.scrollRestoration = "manual";
+    function read() {
+      const q = new URLSearchParams(location.search);
+      if (q.get("v") === "signals") {
+        setView({ tab: "signals", market: q.get("m") || "sp500", instrument: q.get("i") });
+      } else if (!q.get("t")) {
+        setView((cur) => ({ ...cur, tab: "companies" }));
+      }
+      return q.get("t");
+    }
+    const t = read();
     if (t) fetchCompany(t);
     function onPop() {
-      const p = new URLSearchParams(location.search).get("t");
+      const p = read();
       if (p) fetchCompany(p); else goHome();
     }
     addEventListener("popstate", onPop);
@@ -67,17 +88,33 @@ export default function Page() {
 
   function open(t) {
     history.pushState({ t }, "", `?t=${encodeURIComponent(t)}`);
-    window.scrollTo(0, 0);
     fetchCompany(t);
+  }
+
+  // The signals view lives in the URL too (?v=signals&m=etf&i=SPY).
+  function show(next) {
+    const q = new URLSearchParams();
+    if (next.tab === "signals") {
+      q.set("v", "signals");
+      q.set("m", next.market);
+      if (next.instrument) q.set("i", next.instrument);
+    }
+    const query = q.toString();
+    history.pushState({}, "", query ? `?${query}` : location.pathname);
+    window.scrollTo(0, 0);
+    setView(next);
   }
 
   function back() {
     if (history.state?.t) history.back();
     else { history.pushState({}, "", location.pathname); goHome(); }
-    window.scrollTo(0, 0);
   }
 
   const onCompany = ticker != null;
+
+  useEffect(() => {
+    if (!onCompany) window.scrollTo(0, homeScroll.current);
+  }, [onCompany]);
 
   return (
     <>
@@ -96,9 +133,18 @@ export default function Page() {
       </div>
 
       <main className="sheet">
-        {!onCompany && (
-          <>
-            <div style={{ margin: "28px 0 32px" }}>
+        <div hidden={onCompany}>
+          <div className="tabs" role="tablist" style={{ marginTop: 12 }}>
+            {[["companies", "Şirketler"], ["signals", "Sinyaller"]].map(([key, label]) => (
+              <button key={key} role="tab" aria-selected={view.tab === key}
+                      className={`seg ${view.tab === key ? "on" : ""}`}
+                      onClick={() => show({ ...view, tab: key, instrument: null })}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div hidden={view.tab !== "companies"}>
+            <div style={{ margin: "0 0 32px" }}>
               <div className="display" style={{ marginBottom: 10 }}>Bilançodan karara.</div>
               <div className="lead" style={{ maxWidth: "46ch" }}>
                 Şirketin SEC'e verdiği raporlardan hesaplanan sağlık, değer ve
@@ -106,9 +152,15 @@ export default function Page() {
               </div>
             </div>
             <MarketRegime />
-            <TopPicks onPick={open} />
-          </>
-        )}
+            <TopPicks onPick={open} active={!onCompany && view.tab === "companies"} />
+          </div>
+          {view.tab === "signals" && (
+            <Signals market={view.market} instrument={view.instrument}
+                     onMarket={(m) => show({ tab: "signals", market: m, instrument: null })}
+                     onInstrument={(i) => show({ ...view, instrument: i })}
+                     onCompany={open} />
+          )}
+        </div>
 
         {busy && <div className="small dim" style={{ marginTop: 40 }}>Yükleniyor…</div>}
 

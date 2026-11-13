@@ -10,6 +10,7 @@ the output: the discount rate, and the growth fade used in the forecast.
 Everything else comes from the evidence package or the quote.
 """
 import json
+import math
 import threading
 import time
 import urllib.error
@@ -160,13 +161,27 @@ def _regress_beta(stock, market):
     return {"beta": round(cov / var, 3), "months": len(shared)}
 
 
+# The 10-year yield enters every cost of equity, and a justified P/B
+# divides by (Ke - g), about six points: a quarter-point move in the spot
+# yield moved bank fair values by 4% in four days with no news from any
+# bank. The rate used is the mean of the last three months of daily closes;
+# the backtest takes the same three months to its as-of month.
+RISK_FREE_MONTHS = 3
+RISK_FREE_URL = ("https://query1.finance.yahoo.com/v8/finance/chart/%s"
+                 "?range=%dmo&interval=1d")
+
+
 @_ttl
 def risk_free_rate():
     try:
-        req = urllib.request.Request(QUOTE_URL % TREASURY_10Y,
+        req = urllib.request.Request(RISK_FREE_URL % (TREASURY_10Y, RISK_FREE_MONTHS),
                                      headers={"User-Agent": UA})
         d = json.loads(urllib.request.urlopen(req, timeout=20).read())
-        return round(d["chart"]["result"][0]["meta"]["regularMarketPrice"] / 100, 4)
+        closes = [c for c in d["chart"]["result"][0]["indicators"]["quote"][0]["close"]
+                  if c is not None and math.isfinite(c) and c > 0]
+        if len(closes) < 20 * RISK_FREE_MONTHS // 2:
+            return None
+        return round(sum(closes) / len(closes) / 100, 4)
     except Exception:
         return None
 
@@ -407,6 +422,50 @@ def historical_multiple(pkg, shares, asof=None):
             "span": [observations[0][0], observations[-1][0]]}
 
 
+def ebitda_reversion(pkg, shares, asof=None):
+    """Fair value per share from the company's own median EV/EBITDA.
+
+    The EV/FCF reversion with EBITDA in place of free cash flow, for a REIT:
+    its earnings carry depreciation on property that does not wear out the
+    way the charge assumes, and EBITDA is before it. Only quarters whose
+    price, filed share count and net debt are all known by `asof` enter.
+    """
+    import backtest
+
+    m = pkg["latest_metrics"]
+    ebitda_now, debt_now = m.get("ebitda_ttm"), m.get("net_debt")
+    if not shares or debt_now is None or not ebitda_now or ebitda_now <= 0:
+        return None
+    try:
+        payload = backtest.prices(pkg["company"]["ticker"], need_raw=True,
+                                  max_age_days=None if asof else LIVE_PRICE_MAX_AGE)
+    except Exception:
+        return None
+    series, splits = payload["raw"], payload["splits"]
+    debt_series = dict((pkg["trends"].get("net_debt") or {}).get("series") or [])
+    share_hist = shares_series(pkg["company"]["cik"], asof)
+    multiples = []
+    for date_str, ebitda in (pkg["trends"].get("ebitda_ttm") or {}).get("series") or []:
+        month = _month_after(date_str)
+        if not ebitda or ebitda <= 0 or (asof is not None and month > asof[:7]):
+            continue
+        price, debt = series.get(month), debt_series.get(date_str)
+        hit = _nearest_shares(share_hist, date_str, strict=True)
+        if not price or debt is None or hit is None:
+            continue
+        count = edgar.to_price_basis(hit[0], hit[1], splits)
+        multiples.append((price * count + debt) / ebitda)
+    if len(multiples) < 12:
+        return None
+    multiples.sort()
+    median = multiples[len(multiples) // 2]
+    fair = (median * ebitda_now - debt_now) / shares
+    if not math.isfinite(fair) or fair <= 0:
+        return None
+    return {"fair": round(fair, 2), "median_ev_ebitda": round(median, 2),
+            "observations": len(multiples)}
+
+
 def trailing_volatility(closes, end_month, months=12):
     """Annualised volatility of the monthly returns ending at `end_month`.
 
@@ -423,6 +482,69 @@ def trailing_volatility(closes, end_month, months=12):
     sd = (sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)) ** 0.5
     return {"annualized": round(sd * 12 ** 0.5, 4), "months": len(rets),
             "through": end_month}
+
+
+DAILY_URL = ("https://query1.finance.yahoo.com/v8/finance/chart/%s"
+             "?range=2y&interval=1d")
+RANGE_DAYS, RANGE_SMOOTH = 14, 60
+
+
+def daily_range(high, low, close, n=RANGE_DAYS, smooth=RANGE_SMOOTH):
+    """The mean daily swing as a share of the price: average true range
+    over the close (Wilder, `n` days), averaged over the last `smooth`
+    days. The fall-risk read is built on it; of everything the indicator
+    study tried it separated the companies that fell best. The 60-day
+    average separates them as well as the 14-day reading and moves a fifth
+    as much from week to week (indicators/lab, Phase 22), and the verdict
+    reads this number."""
+    ranges = [max(h - l, abs(h - c), abs(l - c))
+              for h, l, c in zip(high[1:], low[1:], close[:-1])]
+    if len(ranges) < 10 * n + smooth:
+        return None
+    atr = sum(ranges[:n]) / n
+    shares = [atr / close[n]]
+    for i, r in enumerate(ranges[n:], n + 1):
+        atr = (atr * (n - 1) + r) / n
+        shares.append(atr / close[i])
+    return sum(shares[-smooth:]) / smooth
+
+
+@_ttl
+def risk_inputs(ticker):
+    """{"range", "through"} from two years of daily bars, or None when they
+    cannot be read. Live only: the backtest's price files hold monthly
+    closes."""
+    try:
+        req = urllib.request.Request(DAILY_URL % ticker, headers={"User-Agent": UA})
+        result = json.loads(urllib.request.urlopen(req, timeout=20).read())["chart"]["result"][0]
+        q = result["indicators"]["quote"][0]
+        rows = [(t, h, l, c) for t, h, l, c in zip(result["timestamp"], q["high"], q["low"],
+                                                   q["close"])
+                if None not in (h, l, c) and c > 0]
+        high, low, close = ([r[i] for r in rows] for i in (1, 2, 3))
+        spread = daily_range(high, low, close)
+        if spread is None or not math.isfinite(spread):
+            return None
+        return {"range": round(spread, 5),
+                "through": time.strftime("%Y-%m-%d", time.gmtime(rows[-1][0]))}
+    except Exception:
+        return None
+
+
+def distance_to_default(equity, debt, volatility, drift):
+    """Naive Merton distance to default (Bharath & Shumway 2008): how many
+    standard deviations of asset value separate the firm from its debt, a
+    year out. `equity` is the market value, `debt` the face value owed,
+    `volatility` the equity's annual volatility, `drift` its trailing
+    one-year return. None when an input is missing -- an unknown or zero
+    debt is not read as safety."""
+    if (not equity or not debt or equity <= 0 or debt <= 0
+            or not volatility or drift is None):
+        return None
+    weight = equity / (equity + debt)
+    asset_vol = weight * volatility + (1 - weight) * (0.05 + 0.25 * volatility)
+    dd = (math.log((equity + debt) / debt) + drift - asset_vol ** 2 / 2) / asset_vol
+    return round(dd, 3) if math.isfinite(dd) else None
 
 
 def _add_month(month, n):
@@ -798,6 +920,7 @@ def value(pkg, market=None):
                                 "tahvili, risk primi %4.5 varsayımıdır."},
         "dcf": dcf,
         "volatility": volatility,
+        "risk": None if market else risk_inputs(company["ticker"]),
         "net_issuance": issuance,
         "sensitivity": sensitivity,
         "reversion": reversion,

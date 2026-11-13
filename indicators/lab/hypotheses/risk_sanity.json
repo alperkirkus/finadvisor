@@ -1,0 +1,6 @@
+[
+ {"id": "risk_range_itself", "type": "risk", "expr": "rank(range14)", "horizon": 250, "rationale": "The benchmark against itself: the gain must be exactly zero.", "source": "sanity"},
+ {"id": "risk_vol20", "type": "risk", "expr": "vol20", "horizon": 250, "rationale": "Close-to-close volatility, the other common measure of the same thing.", "source": "sanity"},
+ {"id": "risk_below_200d", "type": "risk", "expr": "-ma_gap200", "horizon": 250, "rationale": "Trend alone: how far below the 200-day average.", "source": "sanity"},
+ {"id": "risk_range_plus_trend", "type": "risk", "expr": "rank(range14) + rank(-ma_gap200)", "horizon": 250, "rationale": "The simplest combination: volatile and below its long average.", "source": "sanity"}
+]

@@ -1,0 +1,3 @@
+[
+ {"id": "diag_quarter_turn_stretch", "type": "event", "expr": "(days_left <= 4) & ((month == 12) | (month == 6)) & (z20 < -1)", "horizon": 20, "rationale": "Written after a by-month table of the one-month reversal over 2006-2025 showed it concentrated after December and June. Already seen on every stage: it counts only on later data.", "source": "diagnostic"}
+]

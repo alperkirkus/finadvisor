@@ -1,0 +1,6 @@
+[
+ {"id": "sanity_reversal_20", "type": "rank", "expr": "-ret20", "horizon": 20, "rationale": "One-month reversal, the effect the single-indicator test found. Checks the engine sees it.", "source": "sanity"},
+ {"id": "sanity_stretch_20", "type": "rank", "expr": "-z20", "horizon": 20, "rationale": "Price below its 20-day average: the same reversal seen through a band.", "source": "sanity"},
+ {"id": "sanity_low_range_60", "type": "rank", "expr": "-range14", "horizon": 60, "rationale": "Low-volatility anomaly: calmer stocks.", "source": "sanity"},
+ {"id": "sanity_high_range_fall", "type": "event", "expr": "rank(range14) > 0.8", "horizon": 60, "rationale": "The top fifth by daily range: known to fall hard more often; what does it do on average?", "source": "sanity"}
+]

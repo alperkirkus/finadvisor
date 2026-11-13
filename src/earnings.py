@@ -89,7 +89,7 @@ def events(ticker, rec, spy):
         facts = edgar.companyfacts(cik)
         rel = releases(cik)
         periodic = periodic_filings(cik)
-        px = S.fetch_one(U.yahoo_symbol(ticker))
+        px = S.fetch_one(rec.get("symbol") or U.yahoo_symbol(ticker))
     except Exception:
         return []
     if not rel:

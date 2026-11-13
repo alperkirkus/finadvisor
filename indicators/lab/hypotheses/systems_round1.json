@@ -1,0 +1,362 @@
+[
+  {
+    "id": "sys_band_reentry",
+    "entry": "cross_up(z20, -2)",
+    "exit": "(z20 > 0)",
+    "stop_atr": 2.5,
+    "max_days": 20,
+    "rationale": "Instead of buying while price is under the lower band, wait for the first close back inside it: the fall has paused, so the entry no longer catches the days when it simply continues. Exit at the 20-day average; the 2.5 ATR stop cuts the trades where the fall resumes, which is what made the classic version fail later.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_dip_rising_trend",
+    "entry": "(z20 < -2) & (ma_gap200 > 0) & (ret60 > 0)",
+    "exit": "(z20 > 0)",
+    "stop_atr": 3.0,
+    "max_days": 15,
+    "rationale": "A break under the lower band is a dip only if the larger move is still up: price above the 200-day and higher than three months ago. Exit at the 20-day average; the 3 ATR stop and 15-day limit keep a dip that turns into a trend change from becoming a large loss.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_no_news_dip",
+    "entry": "(z20 < -2) & (ts_max(rvol, 5) < 1.5) & (ts_min(gap, 5) > -0.02)",
+    "exit": "(z20 > 0)",
+    "stop_atr": 2.5,
+    "max_days": 15,
+    "rationale": "A fall with no volume spike and no gap down in the last week has no news behind it, so it is selling pressure that liquidity buyers get paid to absorb; falls on news are the ones that keep going. Exit at the 20-day average; the stop covers the case where the news arrives after entry.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_calm_regime_dip",
+    "entry": "(z20 < -2) & (range14 < ts_mean(range14, 60))",
+    "exit": "(z20 > 0)",
+    "stop_atr": 3.0,
+    "max_days": 15,
+    "rationale": "When the daily range is below the stock's own three-month average, a move under the band is a small drift in a quiet market rather than a repricing; the losers that grew after 2017 were falls with expanding ranges. Exit at the 20-day average; the stop guards against the regime changing after entry.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_oversold_reversal_bar",
+    "entry": "(lag(z20, 1) < -2) & (ret1 > 0) & (ret1 > gap)",
+    "exit": "(z20 > 0) | (bd10 < 0)",
+    "stop_atr": 2.0,
+    "max_days": 15,
+    "rationale": "After a close under the lower band, buy only the day that closes up and above its own open: buyers have shown up, which is the evidence the classic entry lacked. Exit at the 20-day average, or at once on a new 10-day closing low, which says the reversal failed.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_rsi25_quick",
+    "entry": "(rsi < 25)",
+    "exit": "(rsi > 40)",
+    "stop_atr": null,
+    "max_days": 7,
+    "rationale": "A deeper oversold reading than the classic 30 with a much nearer exit and a 7-day limit: take only the first part of the bounce, where forced selling is reversed, and never stay long enough for a continuing decline to build a large loss. The time limit is the protection instead of a stop.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_climax_stabilised",
+    "entry": "(ts_max(rvol, 5) > 2.5) & (ts_min(z20, 5) < -2.5) & (ret1 > 0) & (bd10 >= 0)",
+    "exit": "(z20 > 0)",
+    "stop_atr": 2.5,
+    "max_days": 20,
+    "rationale": "A selling climax (volume above 2.5 times normal and a close far under the band within the last week) followed by an up day that is not a new low: the forced sellers are done and the price has held. Exit at the 20-day average; the stop is there because a climax on real bad news can be followed by a second leg.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_down_streak_uptrend",
+    "entry": "(ts_max(ret1, 4) < 0) & (ma_gap200 > 0)",
+    "exit": "(ret1 > 0)",
+    "stop_atr": 3.0,
+    "max_days": 7,
+    "rationale": "Four down closes in a row in a stock above its 200-day is a run of profit taking that usually ends within days. Exit on the first up close, so the trade takes the snap-back only; the stop and 7-day limit bound the rare streak that is the start of a break.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_gap_down_recovered",
+    "entry": "(gap < -0.02) & (ret1 > gap + 0.01) & (lag(ma_gap200, 1) > 0)",
+    "exit": "(rsi > 55)",
+    "stop_atr": 2.0,
+    "max_days": 10,
+    "rationale": "A gap down of more than 2% in an uptrend that is bought back by at least a point during the same session: the open overshot and buyers already corrected part of it. Exit when RSI is back above 55; the tight stop sits under a day that has already been defended, so a break of it means the buyers were wrong.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_rsi_divergence_retest",
+    "entry": "(ts_min(lag(rsi, 3), 10) < 30) & (pos20 < 0.25) & (rsi > 35)",
+    "exit": "(rsi > 55) | (bd20 < 0)",
+    "stop_atr": 2.5,
+    "max_days": 20,
+    "rationale": "RSI was under 30 within the last two weeks; now price is back near the bottom of its range but RSI holds above 35, so the second push down is weaker than the first. Exit when RSI recovers above 55, or on a new 20-day closing low, which cancels the divergence.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_band_dip_atr_stop",
+    "entry": "(z20 < -2)",
+    "exit": "(z20 > 0)",
+    "stop_atr": 2.5,
+    "max_days": 15,
+    "rationale": "The classic lower-band entry and exit unchanged, with only a 2.5 ATR stop and a 15-day limit added: a direct measurement of whether cutting the large losers alone is enough to keep the edge, or whether the stop removes the trades that made it.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_shallow_dip_above_50d",
+    "entry": "(z20 < -1.5) & (ma_gap50 > 0) & (ma_cross_fast > 0)",
+    "exit": "(z20 > 1)",
+    "stop_atr": 2.0,
+    "max_days": 20,
+    "rationale": "A dip toward the lower band that still leaves price above its 50-day, with the 20-day above the 50-day, is weakness inside strength: the stock has not broken anything. Exit near the upper band to let the advance resume; the stop is close because a strong stock should not fall another 2 ATR.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_pullback_rsi_resume",
+    "entry": "(ma_cross > 0) & (ts_min(rsi, 10) < 35) & cross_up(rsi, 50)",
+    "exit": "(bd20 < 0)",
+    "stop_atr": 2.5,
+    "max_days": 40,
+    "rationale": "Trend up by the 50/200-day, a real dip in the last two weeks (RSI under 35), and entry only when RSI crosses back above 50: the pullback is bought after momentum has turned, well below the highs that breakout systems pay. Exit on a new 20-day closing low to give the trend room; the stop covers a failed resumption.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_pullback_to_50d",
+    "entry": "(ma_cross > 0.02) & (abs(ma_gap50) < 0.02) & (ts_max(ma_gap50, 20) > 0.06) & (ret1 > 0)",
+    "exit": "(ma_gap50 < -0.03)",
+    "stop_atr": 2.5,
+    "max_days": 40,
+    "rationale": "A stock that was more than 6% above its 50-day within the last month and has come back to within 2% of it, bought on an up day: the average is where trend followers add and where the risk to a defined level is smallest. Exit if price closes 3% under the 50-day, which says the support did not hold.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_squeeze_volume_breakout_room",
+    "entry": "(brk20 > 0) & (ts_max(lag(squeeze, 1), 10) < 0.8) & (rvol > 1.5) & (ma_gap200 > 0)",
+    "exit": "(bd20 < 0)",
+    "stop_atr": 2.5,
+    "max_days": 40,
+    "rationale": "A new 20-day closing high counts only if the bands were compressed for the two weeks before it and the day's volume is at least 1.5 times normal, above the 200-day: both classic filters together instead of one at a time. Exit on a 20-day low rather than a 10-day low, since the tight exit is what turned breakouts into small losses.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_breakout_retest",
+    "entry": "(ts_max(lag(brk55, 1), 10) > 0) & (brk20 < -0.03) & (ret1 > 0) & (ma_gap50 > 0)",
+    "exit": "(bd20 < 0)",
+    "stop_atr": 2.0,
+    "max_days": 40,
+    "rationale": "Raw breakouts lost to random entry in US stocks, so buy the first pullback after one: a 55-day closing high within the last two weeks, price now at least 3% under the recent high, and an up day. The entry is cheaper than the breakout itself; exit on a 20-day closing low, which means the breakout has failed.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_higher_low_break",
+    "entry": "(brk20 > 0) & (ts_min(ma_gap50, 20) > 0) & (ts_min(pos20, 10) < 0.4)",
+    "exit": "(bd20 < 0)",
+    "stop_atr": 2.5,
+    "max_days": 40,
+    "rationale": "A new 20-day closing high that follows a pullback into the lower part of the range which never closed under the 50-day: the stock made a higher low and then broke out, a tested advance rather than a straight run. Exit on a 20-day closing low; the stop bounds a breakout that reverses at once.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_macd_recross_uptrend",
+    "entry": "cross_up(macd, ts_mean(macd, 9)) & (macd > 0) & (ma_gap200 > 0)",
+    "exit": "cross_down(macd, ts_mean(macd, 9))",
+    "stop_atr": 2.5,
+    "max_days": 30,
+    "rationale": "A MACD signal-line cross taken only when MACD is already above zero and price is above the 200-day is a re-acceleration after a pause inside an uptrend, not a bounce in a decline, which is where the unfiltered cross lost. Exit on the opposite cross; the stop covers gaps the cross is too slow to see.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_adx_trend_dip",
+    "entry": "(adx > 25) & (ma_cross_fast > 0) & (ma_gap50 > 0) & (pos20 < 0.4)",
+    "exit": "(pos20 > 0.9) | cross_down(ma_gap50, 0)",
+    "stop_atr": 2.0,
+    "max_days": 20,
+    "rationale": "The classic ADX system bought the start of a strong trend at its high and lost; this buys inside the strong trend when price has dropped into the lower part of its 20-day range while still above the 50-day. Exit back at the top of the range, or when price crosses under the 50-day and the trend is in question.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_fast_cross_calm",
+    "entry": "cross_up(ma_cross_fast, 0) & (ma_cross > 0) & (range14 < ts_mean(range14, 60))",
+    "exit": "cross_down(ma_cross_fast, 0)",
+    "stop_atr": 3.0,
+    "max_days": 60,
+    "rationale": "A 20/50-day cross up counts only inside a 50/200-day uptrend and while the daily range is below its own three-month average: a quiet resumption, not a volatile whipsaw, which is how most moving-average crosses fail. Exit on the opposite cross; the 3 ATR stop limits the damage when the calm ends.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_gap_and_hold",
+    "entry": "(gap > 0.03) & (ret1 > gap) & (rvol > 2) & (ma_gap200 > 0)",
+    "exit": "(bd10 < 0)",
+    "stop_atr": 2.0,
+    "max_days": 30,
+    "rationale": "A gap up of more than 3% on double volume that also closes above its open is news the market kept buying all day; gaps that are sold into are excluded, which the earlier gap tests did not do. Exit on a 10-day closing low; the stop sits where the gap would be mostly filled and the news judged wrong.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_base_breakout_room",
+    "entry": "(brk55 > 0) & (ma_gap50 < 0.08) & (ma_cross > 0)",
+    "exit": "cross_down(ma_gap50, 0)",
+    "stop_atr": 3.0,
+    "max_days": 60,
+    "rationale": "A 55-day closing high taken only when price is still less than 8% above its 50-day: a breakout from a base, not the tenth new high of an extended run where late buyers are the exit for early ones. Exit when price crosses under the 50-day and a 3 ATR stop, both wide enough to hold a trend.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_accumulation_dip",
+    "entry": "(ma_gap200 > 0) & (z20 < -1.5) & (cmf > 0.05)",
+    "exit": "(z20 > 0.5)",
+    "stop_atr": 2.5,
+    "max_days": 20,
+    "rationale": "Trend up, price stretched toward the lower band, and money flow still positive: closes have been strong on volume even while price slipped, so buyers are present under the dip. Exit a little above the 20-day average; the stop covers the case where the flow reading was the last of the buying.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_vol_spike_absorbed",
+    "entry": "(ts_z(range14, 60) > 1.5) & (pos20 < 0.15) & (clv5 > 0)",
+    "exit": "(pos20 > 0.6) | (bd10 < 0)",
+    "stop_atr": 2.5,
+    "max_days": 15,
+    "rationale": "Range far above the stock's own norm, price at the bottom of its 20-day range, yet the week's closes in the upper half of their bars: a panic that is being absorbed each day. Exit in the upper part of the range; a new 10-day closing low or the stop says the absorption has ended.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_quiet_uptrend_volume_wake",
+    "entry": "(squeeze < 0.8) & (ma_cross > 0) & (rvol > 2) & (ret1 > 0.01) & (ret1 > gap)",
+    "exit": "(bd10 < 0)",
+    "stop_atr": 2.0,
+    "max_days": 30,
+    "rationale": "In a compressed uptrend, the first day of double volume that closes up more than 1% and above its open shows demand arriving before any new high is made, so the entry is earlier and cheaper than a breakout. Exit on a 10-day closing low; the stop is under the bar that started the move.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_base_accumulation",
+    "entry": "(abs(ret20) < 0.04) & (obv_slope > 0.2) & (cmf > 0.1) & (ma_gap200 > 0)",
+    "exit": "(bd20 < 0) | (rsi > 75)",
+    "stop_atr": 2.5,
+    "max_days": 40,
+    "rationale": "A flat month above the 200-day in which on-balance volume and money flow both rose: someone is buying without moving the price yet. Exit on a 20-day closing low if the base breaks down, or into strength when RSI passes 75 and the accumulation has been paid.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_low_volume_pullback_trigger",
+    "entry": "(ma_cross > 0) & (lag(pos20, 1) < 0.3) & (ts_mean(rvol, 5) < 0.9) & (ret1 > 0)",
+    "exit": "(pos20 > 0.85)",
+    "stop_atr": 2.0,
+    "max_days": 20,
+    "rationale": "In an uptrend, a pullback to the lower part of the range on a week of below-normal volume is an absence of buyers, not an arrival of sellers; the first up day is the trigger. Exit near the top of the range; the tight stop reflects that a low-volume pullback should not extend.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_smooth_trend_first_dip",
+    "entry": "(ts_mean(lag(er20, 5), 20) > 0.35) & (lag(ma_gap50, 5) > 0.03) & (ret5 < -0.03)",
+    "exit": "(brk20 > 0) | (ma_gap50 < -0.05)",
+    "stop_atr": 2.5,
+    "max_days": 30,
+    "rationale": "A month of unusually straight advance above the 50-day followed by the first weekly drop of more than 3%: steady trends are held by patient buyers who use the first dip to add. Exit on a new 20-day closing high, or if price falls 5% under the 50-day and the trend is broken.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_shock_resolved_up",
+    "entry": "(ts_max(lag(range_ratio, 5), 15) > 1.5) & (range_ratio < 1) & (ma_gap50 > 0) & (ma_gap200 > 0)",
+    "exit": "cross_down(ma_gap50, 0)",
+    "stop_atr": 2.5,
+    "max_days": 40,
+    "rationale": "A range shock within the last three weeks that has calmed, with price above both the 50-day and the 200-day: an uncertainty event has been resolved in the stock's favour and cautious buyers return over the following weeks. Exit when price crosses under the 50-day; the stop covers a second shock.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_winner_oversold_orderly",
+    "entry": "(mom12_1 > 0.2) & (rsi < 35) & (range_ratio < 1.2)",
+    "exit": "(rsi > 55)",
+    "stop_atr": 2.5,
+    "max_days": 20,
+    "rationale": "A 12-month winner that becomes oversold without its range blowing out is being sold by profit takers, not repriced; buyers who missed the advance wait for exactly this. Exit when RSI recovers above 55; the stop protects against the oversold reading being the first sign of the winner breaking.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_tight_flag_near_high",
+    "entry": "(high_gap250 > -0.05) & (range_ratio < 0.8) & (ts_mean(rvol, 5) < 0.8) & (ma_gap50 > 0)",
+    "exit": "(bd20 < 0)",
+    "stop_atr": 2.5,
+    "max_days": 40,
+    "rationale": "Within 5% of the 52-week high, with a contracting range and a week of low volume: holders are not selling at the best prices of the year. Entering during the quiet instead of on the new high avoids paying the breakout premium that lost in US stocks. Exit on a 20-day closing low if supply appears.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_tight_range_strong_closes",
+    "entry": "(squeeze < 0.7) & (clv5 > 0.3) & (ma_gap50 > 0)",
+    "exit": "(bd10 < 0)",
+    "stop_atr": 2.0,
+    "max_days": 30,
+    "rationale": "Compressed bands, price above the 50-day and a week of closes near the top of each day's bar: inside a narrow range the buyers are winning every session, which shows which way the range will resolve. Exit on a 10-day closing low; the stop is tight because a compressed stock should not move 2 ATR against the entry.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_golden_state_dip",
+    "entry": "(ma_cross > 0) & (ma_gap200 > 0) & (rsi < 40)",
+    "exit": "(ma_gap200 < -0.02)",
+    "stop_atr": 4.0,
+    "max_days": 60,
+    "rationale": "For ETFs and BIST, where trends persist: enter the golden-cross state on a dip (RSI under 40) instead of on the cross, and then hold as a trend trade for up to 60 days. Exit only if price closes 2% under the 200-day; the 4 ATR stop is wide enough for an index or a lira stock to breathe.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_early_golden_breakout",
+    "entry": "(brk55 > 0) & (ma_cross > 0) & (lag(ma_cross, 30) < 0)",
+    "exit": "(bd20 < 0)",
+    "stop_atr": 4.0,
+    "max_days": 60,
+    "rationale": "A 55-day closing high within six weeks of the 50-day crossing above the 200-day: the slow signal has just turned and the price confirms it, the early part of a new trend where the BIST winners were made. Exit on a 20-day closing low; the wide stop avoids being shaken out of a young trend.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_fresh_55d_high",
+    "entry": "(brk55 > 0) & (ts_max(lag(brk55, 1), 40) < 0)",
+    "exit": "cross_down(ma_gap50, 0)",
+    "stop_atr": 4.0,
+    "max_days": 60,
+    "rationale": "The first 55-day closing high after at least 40 days without one marks the start of a move, not its continuation; in asset-class ETFs and in BIST such starts tend to run for a quarter. Exit when price crosses under the 50-day, with a 4 ATR stop so normal noise does not end the trade.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_ts_momentum_turn",
+    "entry": "cross_up(mom12_1, 0) & (ma_gap200 > 0)",
+    "exit": "cross_down(ma_gap200, 0)",
+    "stop_atr": 4.0,
+    "max_days": 60,
+    "rationale": "Twelve-month return turning positive while price is above the 200-day is the time-series momentum signal that works across asset classes: slow capital reallocates toward what has risen over a year. Exit when price crosses under the 200-day; the wide stop is a disaster limit only.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_reclaim_200d_calm",
+    "entry": "cross_up(ma_gap200, 0) & (squeeze < 1)",
+    "exit": "(ma_gap200 < -0.03)",
+    "stop_atr": 4.0,
+    "max_days": 60,
+    "rationale": "A cross back above the 200-day while the bands are no wider than their yearly norm is a calm return to the long-term uptrend, the form in which the 200-day rule works for index ETFs; crosses in turbulent markets are the whipsaws. Exit if price falls 3% under the 200-day, so a retest does not end the trade.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_breakout_rising_participation",
+    "entry": "(brk20 > 0) & (ma_cross_fast > 0) & (vol_trend > 1.2)",
+    "exit": "(bd20 < 0)",
+    "stop_atr": 3.0,
+    "max_days": 60,
+    "rationale": "A 20-day closing high with the 20-day above the 50-day and volume 20% above its half-year average: participation is broadening, which in a retail-driven market like BIST is what turns a breakout into one of the few large winners. Exit on a 20-day closing low to stay in those winners; the stop bounds the many small failures.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_strong_trend_mean_reclaim",
+    "entry": "(adx > 30) & (ma_cross_fast > 0) & (ma_cross > 0) & cross_up(z20, 0)",
+    "exit": "cross_down(ma_cross_fast, 0)",
+    "stop_atr": 4.0,
+    "max_days": 60,
+    "rationale": "In a strong trend with both average pairs aligned up, enter when price closes back above its 20-day average after a pause: a re-entry point in a trend that has already proved itself. Exit when the 20-day crosses under the 50-day; the wide stop lets a strong trend correct without ending the trade.",
+    "source": "agent-systems1"
+  },
+  {
+    "id": "sys_vol_drop_in_uptrend",
+    "entry": "cross_down(range_ratio, 0.8) & (ma_gap200 > 0) & (ma_cross > 0)",
+    "exit": "cross_down(ma_gap50, 0) | (range_ratio > 1.5)",
+    "stop_atr": 4.0,
+    "max_days": 60,
+    "rationale": "The short-term range falling to under 80% of its 60-day level inside an uptrend is the point where volatility-targeting and risk-budgeted investors add exposure, most visible in index and bond ETFs. Exit when price crosses under the 50-day, or when the range expands sharply and the reason for the trade is gone.",
+    "source": "agent-systems1"
+  }
+]

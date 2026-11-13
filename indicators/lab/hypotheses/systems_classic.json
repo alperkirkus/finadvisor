@@ -1,0 +1,19 @@
+[
+ {"id": "sys_ma50_trend", "entry": "cross_up(ma_gap50, 0)", "exit": "cross_down(ma_gap50, 0)", "stop_atr": null, "max_days": 120, "rationale": "Close crossing its 50-day average, out when it crosses back: the plainest trend rule.", "source": "classic"},
+ {"id": "sys_ma20_50_cross", "entry": "cross_up(ma_cross_fast, 0)", "exit": "cross_down(ma_cross_fast, 0)", "stop_atr": null, "max_days": 120, "rationale": "20-day average crossing the 50-day.", "source": "classic"},
+ {"id": "sys_golden_cross", "entry": "cross_up(ma_cross, 0)", "exit": "cross_down(ma_cross, 0)", "stop_atr": null, "max_days": 120, "rationale": "50-day average crossing the 200-day.", "source": "classic"},
+ {"id": "sys_macd_signal_cross", "entry": "cross_up(macd, ts_mean(macd, 9))", "exit": "cross_down(macd, ts_mean(macd, 9))", "stop_atr": null, "max_days": 60, "rationale": "MACD crossing its signal line, as charted.", "source": "classic"},
+ {"id": "sys_macd_zero_uptrend", "entry": "cross_up(macd, 0) & (ma_gap200 > 0)", "exit": "cross_down(macd, 0)", "stop_atr": null, "max_days": 120, "rationale": "MACD turning positive above the 200-day average.", "source": "classic"},
+ {"id": "sys_turtle_20_10", "entry": "brk20 > 0", "exit": "bd10 < 0", "stop_atr": 2.0, "max_days": 120, "rationale": "Donchian breakout: buy a 20-day closing high, sell a 10-day low, stop two ATR under the entry.", "source": "classic"},
+ {"id": "sys_turtle_55_20", "entry": "brk55 > 0", "exit": "bd20 < 0", "stop_atr": 2.0, "max_days": 120, "rationale": "The slower Donchian system: 55-day high in, 20-day low out.", "source": "classic"},
+ {"id": "sys_breakout_volume", "entry": "(brk20 > 0) & (rvol > 1.5)", "exit": "bd10 < 0", "stop_atr": 2.0, "max_days": 120, "rationale": "A 20-day breakout counted only on volume half again above usual.", "source": "classic"},
+ {"id": "sys_squeeze_breakout", "entry": "(lag(squeeze, 1) < 0.7) & (brk20 > 0)", "exit": "bd10 < 0", "stop_atr": 2.0, "max_days": 120, "rationale": "Bollinger squeeze: a breakout out of compressed bands.", "source": "classic"},
+ {"id": "sys_52w_high", "entry": "(high_gap250 > -0.01) & (lag(high_gap250, 5) < -0.03)", "exit": "bd10 < 0", "stop_atr": 2.5, "max_days": 120, "rationale": "Arriving at the 52-week high.", "source": "classic"},
+ {"id": "sys_rsi30_bounce", "entry": "rsi < 30", "exit": "rsi > 50", "stop_atr": null, "max_days": 20, "rationale": "RSI under 30, out when it is back above 50.", "source": "classic"},
+ {"id": "sys_rsi30_uptrend", "entry": "(rsi < 30) & (ma_gap200 > 0)", "exit": "rsi > 50", "stop_atr": null, "max_days": 20, "rationale": "The same, only above the 200-day average: buying dips in an uptrend.", "source": "classic"},
+ {"id": "sys_bollinger_lower", "entry": "z20 < -2", "exit": "z20 > 0", "stop_atr": null, "max_days": 20, "rationale": "Close under the lower Bollinger band, out at the middle band.", "source": "classic"},
+ {"id": "sys_bollinger_uptrend", "entry": "(z20 < -2) & (ma_gap200 > 0)", "exit": "z20 > 0", "stop_atr": null, "max_days": 20, "rationale": "Lower band touched above the 200-day average.", "source": "classic"},
+ {"id": "sys_stoch_oversold_up", "entry": "(pos20 < 0.2) & (ma_gap200 > 0)", "exit": "pos20 > 0.8", "stop_atr": null, "max_days": 20, "rationale": "Stochastic oversold in an uptrend, out when overbought.", "source": "classic"},
+ {"id": "sys_gap_down_uptrend", "entry": "(gap < -0.03) & (lag(ma_gap200, 1) > 0)", "exit": null, "stop_atr": null, "max_days": 5, "rationale": "A gap down of 3% in an uptrend, held a week.", "source": "classic"},
+ {"id": "sys_adx_trend_start", "entry": "(adx > 25) & (lag(adx, 5) < 20) & (ma_gap50 > 0)", "exit": "cross_down(ma_gap50, 0)", "stop_atr": 2.0, "max_days": 120, "rationale": "ADX rising through 25 from under 20 with price above its 50-day: a trend starting.", "source": "classic"}
+]
