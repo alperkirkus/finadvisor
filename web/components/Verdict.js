@@ -85,6 +85,7 @@ export default function Verdict({ ticker, company, children }) {
   const hist = v?.assumptions?.historical_fcf_growth;
   const nq = w.next_quarter;
   const fv = (w.measured_signals || []).find((m) => m.key === "fair_value");
+  const risk = (w.measured_signals || []).find((m) => m.key === "fall_risk");
   const upside = v?.upside_to_fair;
   const upTone = upside == null ? "neutral"
     : upside > 0.10 ? "good" : upside < -0.10 ? "critical" : "neutral";
@@ -118,6 +119,36 @@ export default function Verdict({ ticker, company, children }) {
       </div>
       <div className="lead" style={{ marginBottom: 8, maxWidth: "60ch" }}>{w.rationale}</div>
       <div style={{ marginBottom: 28 }}><MarketRegime compact /></div>
+
+      {risk && (
+        <div className="section">
+          <div className="section-title">Düşüş riski</div>
+          <div className="group">
+            <div className="tiles">
+              <div className="tile">
+                <div className="label">12 ayda %25+ düşüş</div>
+                <div className={`price s-${risk.tone}`}>{pct(risk.value)}</div>
+                <div className="micro">{risk.state} · bu gruptaki şirketlerin geçmiş oranı</div>
+              </div>
+              <div className="tile">
+                <div className="label">Tüm evrende</div>
+                <div className="price">{pct(risk.universe_rate)}</div>
+                <div className="micro">
+                  {risk.value > risk.universe_rate
+                    ? `bu şirketin grubu ${(risk.value / risk.universe_rate).toFixed(1)} katı`
+                    : "bu şirketin grubu bunun altında"}
+                </div>
+              </div>
+              <div className="tile">
+                <div className="label">{risk.measure.label}</div>
+                <div className="price">{pct(risk.measure.value)}</div>
+                <div className="micro">{risk.measure.note}</div>
+              </div>
+            </div>
+          </div>
+          <div className="section-foot">{risk.evidence}</div>
+        </div>
+      )}
 
       {w.summary?.length > 0 && (
         <div className="section">
@@ -172,7 +203,7 @@ export default function Verdict({ ticker, company, children }) {
         <div className="section">
           <div className="section-title">Ölçülmüş sinyaller</div>
           <div className="group">
-            {w.measured_signals.map((m) => (
+            {w.measured_signals.filter((m) => m.key !== "fall_risk").map((m) => (
               <div key={m.name} className="cell">
                 <span className={`dot s-${m.tone}`} aria-hidden="true" />
                 <div className="main">

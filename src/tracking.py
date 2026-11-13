@@ -7,8 +7,16 @@ reprices every frozen snapshot today and compares each verdict group, and
 the top ten, with the average name of that same snapshot and with the
 S&P 500. Nothing here is fitted or tuned; it only records and compares.
 
-    python src/tracking.py snapshot     # freeze today's screen (monthly)
+    python src/tracking.py snapshot     # freeze today's screen
+    python src/tracking.py snapshot --weekly    # only if this week has none
     python src/tracking.py report       # how every snapshot has done since
+
+A week without a snapshot cannot be made up later, so the weekly form is
+meant for a scheduler: scripts/snapshot.plist runs it every Monday morning
+(or at the next wake after it), when the prices are Friday's close. Weekly
+snapshots overlap almost entirely -- fifty-two of them are not fifty-two
+tests of a twelve-month return -- but they show how often a verdict changes
+from one week to the next, and no single day's prices decide the record.
 """
 import json
 import os
@@ -16,6 +24,7 @@ import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 
 import ranking
 import valuation as V
@@ -55,6 +64,14 @@ def snapshot(rebuild=False):
     path = os.path.join(DATA, "snapshot_%s.json" % day)
     json.dump(payload, open(path, "w"), indent=1, ensure_ascii=False)
     return path, len(rows)
+
+
+def week_covered(day=None):
+    """Is there already a snapshot dated in the ISO week of `day` (today)?"""
+    week = date.fromisoformat(day or time.strftime("%Y-%m-%d")).isocalendar()[:2]
+    return os.path.isdir(DATA) and any(
+        date.fromisoformat(n[9:19]).isocalendar()[:2] == week
+        for n in os.listdir(DATA) if n.startswith("snapshot_") and n.endswith(".json"))
 
 
 def _snapshots():
@@ -122,6 +139,15 @@ def _print(rows):
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "report"
     if cmd == "snapshot":
+        # A quarter end is frozen in the first week after it, whether or not
+        # this week already has a snapshot (calendar_test.py).
+        import calendar_test
+        done = calendar_test.record()
+        if done:
+            print("Ceyrek sonu kaydedildi: %s" % ", ".join(done))
+    if cmd == "snapshot" and "--weekly" in sys.argv and week_covered():
+        print("Bu haftanin anlik goruntusu zaten var; yenisi alinmadi.")
+    elif cmd == "snapshot":
         path, n = snapshot(rebuild="--rebuild" in sys.argv)
         print("%d sirket kaydedildi: %s" % (n, path))
     else:

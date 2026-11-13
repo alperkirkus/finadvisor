@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Weekly collection of five-minute bars for the intraday study. Yahoo keeps
+  60 days, so a week missed loses nothing and eight missed lose bars for
+  good. Not installed by anything in this repository. To install:
+
+    sed "s|__REPO__|$PWD|g" scripts/intraday.plist > ~/Library/LaunchAgents/com.finadvisor.intraday.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.finadvisor.intraday.plist
+
+  Saturday morning, when the week's last session is complete.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.finadvisor.intraday</string>
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO__/.venv/bin/python</string>
+    <string>intraday/bars.py</string>
+    <string>collect</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>6</integer>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__REPO__/data/intraday/collect.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/data/intraday/collect.log</string>
+</dict>
+</plist>

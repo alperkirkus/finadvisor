@@ -1,0 +1,446 @@
+[
+  {
+    "id": "stop_dip_regime_width",
+    "family": "dip",
+    "stop": {
+      "initial": ["expr", "where((range_ratio > 1.2), 4.0, 2.5) * range14"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "A dip bought while the daily range is expanding is a panic: winners there swing further before they turn, so the stop stands 4 ATR away. A dip in a calm tape should not move 2.5 ATR against the entry; when it does, something other than noise is at work. One fixed ATR multiple is too tight for the first case or too loose for the second.",
+    "r_math": "Calm branch, 2.5 ATR: risk S&P 500 5.75%, ETF 3.25%, BIST 7.75% of price; round-trip cost 0.20/5.75 = 0.035R, 0.10/3.25 = 0.031R, 0.40/7.75 = 0.052R; position min(1%/risk, 20%) = 17.4%, 20%, 12.9% of the account. Expanding branch, 4 ATR: risk 9.2%, 5.2%, 12.4%; cost 0.022R, 0.019R, 0.032R; position 10.9%, 19.2%, 8.1%. Payoff aimed at: a dip winner's best move is 2 ATR at the median, 0.8R on the calm branch and 0.5R on the wide one; break-even win rate p = (1 + c) / (W + 1) = 1.035/1.8 = 57% and 1.022/1.5 = 68% if every loser were a full stop. Table: 2.5 ATR is reached by 26%, 31%, 25% of dip trades and 18%, 23%, 21% of those still ended in profit, so 4.7, 7.1, 5.3 points of winners are given up (win rate 63 -> 58%, 63 -> 56%, 57 -> 52%); 4 ATR is reached by 12%, 17%, 11% (1.0, 1.9, 1.4 points given up). Sizing: on ETFs both branches sit at or next to the 20% cap, so the wide branch costs no size there; on S&P 500 and BIST it roughly halves the position."
+  },
+  {
+    "id": "stop_dip_stretch_proportional",
+    "family": "dip",
+    "stop": {
+      "initial": ["expr", "clip(0.75 * ((1 + ma_cross_fast) / (1 + ma_gap50) - 1), 2.0 * range14, 5.0 * range14)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": 1.33,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "The reward of a dip trade is the distance back to the 20-day average, so the risk is set as three quarters of that distance: the deeper the stretch, the wider the stop, and the average of the signal day is 1.33R away by construction. The target sells there during the day instead of waiting for a close above the average and the next open. The clip keeps the stop between 2 and 5 ATR.",
+    "r_math": "(1 + ma_cross_fast) / (1 + ma_gap50) - 1 is SMA20/close - 1. At z20 = -2 that is two 20-day standard deviations, about 2.6 ATR if one standard deviation of closes is about 1.3 ATR (an assumption, the table does not give it), so the stop is about 2.0 ATR: risk S&P 500 4.6%, ETF 2.6%, BIST 6.2%; cost 0.043R, 0.038R, 0.065R; position 20%, 20%, 16.1%. Target 1.33R: break-even p = (1 + c) / 2.33 = 44.8%, 44.5%, 45.7% for trades that end at the target or the stop. Table: 2 ATR against is reached by 33%, 38%, 32% of dip trades, 25%, 29%, 25% of them profitable, so 8.3, 11.0, 8.0 points of winners are lost and the win rate becomes 55%, 52%, 49%. The target (about 2.7 ATR up) is beyond the winners' median best move of 1.9-2.0 ATR and inside their p90 of 3.4-4.6, so roughly a quarter to a third of winners fill it and the rest leave by the rule for less. With a third of trades at -1R the winners must average about 0.7R (1.4 ATR) for the design to pay. Sizing: S&P 500 and ETF are capped at 20% (stop inside 5%), so the tight stop buys no extra size there."
+  },
+  {
+    "id": "stop_dip_news_bail",
+    "family": "dip",
+    "stop": {
+      "initial": ["expr", "clip(3.5 * range14, 0.05, 0.08)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "((rvol > 2) & (ret1 < -1.5 * range14)) | (gap < -1.5 * range14)"
+    },
+    "rationale": "The excursion table shows distance alone cannot separate dip winners from losers: at every distance a sixth to a half of the trades that get there still end in profit. Information can: a down close of more than 1.5 ATR on double volume, or an opening gap of more than 1.5 ATR, means the dip has become news, and the trade is closed at the next open. The hard stop is only disaster cover, held between 5% and 8% of price so the position never falls under an eighth of the account.",
+    "r_math": "Stop: S&P 500 3.5 ATR = 8.05% clipped to 8%; ETF 4.55% raised to 5% (3.85 ATR); BIST 10.85% cut to 8% (2.6 ATR). Cost 0.20/8 = 0.025R, 0.10/5 = 0.020R, 0.40/8 = 0.050R. Position 12.5%, 20%, 12.5%. Table: the hard stop is reached by about 16%, 18%, 24% of dip trades, of which about 10.5%, 12%, 20% would have won, so 1.7, 2.2, 4.8 points of winners are lost and the win rate is 61%, 61%, 52%. The bail aims at the losers, whose median worst move is 2.8, 3.4, 2.3 ATR: taken out near -2 ATR they cost 0.57R, 0.52R, 0.78R instead of 1R. Payoff aimed at: +2 ATR = 0.57R, 0.52R, 0.78R against a bailed loss of the same size, so break-even p = (L + c) / (W + L) = 0.595/1.14 = 52%, 0.54/1.04 = 52%, 0.83/1.56 = 53%: cleared on S&P 500 and ETF, on the line in BIST. Sizing: on ETFs a stop inside 5% gains nothing, which is why the floor is there."
+  },
+  {
+    "id": "stop_dip_under_200d",
+    "family": "dip",
+    "stop": {
+      "initial": ["expr", "where((ma_gap200 > 0), clip(ma_gap200 / (1 + ma_gap200) + 0.5 * range14, 1.5 * range14, 4.0 * range14), 2.5 * range14)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "A dip bought above the 200-day average is a bet that the long uptrend holds, so the stop goes half an ATR under that average, where the bet is proved wrong, not at an arbitrary multiple. It is kept between 1.5 and 4 ATR; a dip already under the 200-day has no such level and gets 2.5 ATR.",
+    "r_math": "ma_gap200 / (1 + ma_gap200) is the distance from the close down to the 200-day average. Typical cases: S&P 500 stock 6% above it: 5.66% + 1.15% = 6.8% = 3.0 ATR; ETF 4% above: 3.85% + 0.65% = 4.5% = 3.5 ATR; BIST stock 8% above: 7.4% + 1.55% = 8.95% = 2.9 ATR. Cost 0.20/6.8 = 0.029R, 0.10/4.5 = 0.022R, 0.40/8.95 = 0.045R. Position 14.7%, 20%, 11.2%. Payoff aimed at: +2 ATR = 0.67R, 0.57R, 0.69R; break-even p = (1 + c) / (W + 1) = 62%, 65%, 62% if every loser were a full stop. Table: about 3 ATR is reached by 20%, 21% (at 3.5), 19% of dip trades with 13%, 14%, 17% of them profitable, so 2.6, 2.9, 3.2 points of winners are lost: win rate 60%, 60%, 54%, and only a fifth of trades are full stops, the other losers leave by the rule for less than 1R. Sizing: ETF stays at the 20% cap; S&P 500 and BIST trade size for room."
+  },
+  {
+    "id": "stop_dip_quick_stall",
+    "family": "dip",
+    "stop": {
+      "initial": ["atr", 3.0],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": 3
+    },
+    "rationale": "A dip that is noise turns within days. If the close is still under the entry price on the third day in the trade, the bounce has not come and the capital is taken back for a small loss, before the trade can travel to the hard stop. Three days is shorter than anything in the grid on purpose: the question is whether dip winners show themselves that early.",
+    "r_math": "Stop 3 ATR: risk S&P 500 6.9%, ETF 3.9%, BIST 9.3%; cost 0.029R, 0.026R, 0.043R; position 14.5%, 20%, 10.8%. Table: 3 ATR is reached by 20%, 25%, 19% of dip trades (13%, 17%, 17% of them profitable: 2.6, 4.3, 3.2 points of winners lost). A stall exit leaves near -0.5 ATR = -0.17R instead of -1R. Payoff aimed at: +2 ATR = 0.67R; if most losers leave by the stall at about 0.2R, break-even p = (0.2 + c) / (0.67 + 0.2) = 26%, 26%, 28%. What the table cannot say is how many winners are under their entry on day 3: their median worst move is 0.7-0.8 ATR, so a large share dip first, and every one cut is a 0.67R winner turned into a -0.17R loser. If more than about a third of winners are cut the design loses to no stall. Sizing: ETF capped at 20%; elsewhere the 3 ATR stop sets the size."
+  },
+  {
+    "id": "stop_dip_half_at_two_atr",
+    "family": "dip",
+    "stop": {
+      "initial": ["atr", 4.0],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": 0.5,
+      "target_part": 0.5,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "A wide stop so noise does not take the trade out, and a first sale that matches what dips usually give: half the position is sold 2 ATR above the entry (0.5R of a 4 ATR stop), after which the stop for the rest stands at the entry price. A trade that has bounced 2 ATR can then no longer end as a loss, and the other half still leaves at the mean.",
+    "r_math": "Stop 4 ATR: risk S&P 500 9.2%, ETF 5.2%, BIST 12.4%; cost 0.022R, 0.019R, 0.032R; position 10.9%, 19.2%, 8.1%. Table: +2 ATR is the winners' median best move, so about half of the winners reach it (31%, 31%, 28% of trades), and it is the losers' p90, so about 10% of losers reach it first (3.7%, 3.7%, 4.3% of trades). Those losers end at +0.25R (half banked at 0.5R, half out at entry) instead of roughly -0.7R: about +0.95R on 4% of trades = +0.035R per trade. A winner that fills the target and then leaves at the mean near +2.5 ATR makes 0.5 x 0.5R + 0.5 x 0.62R = 0.56R; break-even p = (1 + c) / 1.56 = 65.5% if every loser were a full stop, but 4 ATR is reached by only 12%, 17%, 11% of trades (1.0, 1.9, 1.4 points of winners lost; win rate 62%, 61%, 56%). The cost is the winners whose second half is stopped at the entry price instead of recovering. Sizing: only ETF keeps near-full size; on S&P 500 and BIST the 4 ATR stop halves the position."
+  },
+  {
+    "id": "stop_dip_accel_bail",
+    "family": "dip",
+    "stop": {
+      "initial": ["expr", "maximum(3.0 * range14, 0.05)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "(bd20 < 0) & (ret1 < -range14)"
+    },
+    "rationale": "A dip that is ending makes smaller down days; one that is not ending makes a new 20-day closing low on a day that loses more than a full ATR. That combination after entry says the fall is accelerating, and the trade leaves at the next open without waiting for the hard stop. The hard stop is 3 ATR and never closer than 5% of price.",
+    "r_math": "Stop: S&P 500 3 ATR = 6.9%; ETF 3.9% raised to 5% (3.85 ATR); BIST 9.3%. Cost 0.029R, 0.020R, 0.043R. Position 14.5%, 20%, 10.8%. Table: the hard stop is reached by about 20%, 18%, 19% of dip trades (2.6, 2.2, 3.2 points of winners lost). The bail fires 1 to 2 ATR under the entry: 0.33-0.67R on S&P 500 and BIST, 0.26-0.52R on ETF. Payoff aimed at: +2 ATR = 0.67R, 0.52R, 0.67R against a bailed loss of about 0.5R: break-even p = (0.5 + c) / (W + 0.5) = 45%, 51%, 46%, against a win rate near 60%, 61%, 54% after the hard stop. The risk is in the winners: a quarter of them go more than 1.4-1.6 ATR against first (p75), and those that do it with one large down day at a new low are cut. Sizing: the 5% floor exists because on ETFs anything tighter leaves the position at the same 20%."
+  },
+  {
+    "id": "stop_dip_regime_bail",
+    "family": "dip",
+    "stop": {
+      "initial": ["atr", 3.5],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "(range_ratio > 1.5) & (lag(range_ratio, 3) < 1.2)"
+    },
+    "rationale": "Mean reversion is a bet on an unchanged volatility regime. If the 5-day range jumps from under 1.2 to over 1.5 times its 60-day level within three days while the trade is open, the regime the bet was made in is gone, and the trade is closed whatever the price is. The stop is priced in the old ATR and would otherwise be hit by the new, larger days.",
+    "r_math": "Stop 3.5 ATR: risk S&P 500 8.05%, ETF 4.55%, BIST 10.85%; cost 0.025R, 0.022R, 0.037R; position 12.4%, 20%, 9.2%. Table: 3.5 ATR is reached by about 16%, 21%, 15% of dip trades with 10.5%, 14%, 15% of them profitable: 1.7, 2.9, 2.3 points of winners lost, win rate 61%, 60%, 55%. When the range grows by half, a 3.5 ATR stop is worth about 2.3 of the new ATRs, so the bail leaves at whatever the trade shows that day, typically 1 to 2 old ATR down (0.3-0.6R) and sometimes up. Payoff aimed at: +2 ATR = 0.57R; with the losers that matter leaving at about 0.5R, break-even p = (0.5 + c) / (0.57 + 0.5) = 49%. Sizing: ETF is at the 20% cap (4.55% < 5%); S&P 500 and BIST carry 12% and 9%, so the rule has to earn its place there through smaller losers."
+  },
+  {
+    "id": "stop_dip_trend_break_bail",
+    "family": "dip",
+    "stop": {
+      "initial": ["expr", "clip(3.0 * range14, 0.04, 0.07)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "(ma_gap200 < 0) & (lag(ma_gap200, 1) >= 0)"
+    },
+    "rationale": "The dip systems with the best records buy above the 200-day average. The day the close crosses under that average the trade is no longer a dip in an uptrend but a position in a broken trend, and it is closed at the next open. The hard stop is 3 ATR held between 4% and 7% of price, so size stays above a seventh of the account in every market.",
+    "r_math": "Stop: S&P 500 3 ATR = 6.9%; ETF 3.9% raised to 4% (3.1 ATR); BIST 9.3% cut to 7% (2.26 ATR). Cost 0.20/6.9 = 0.029R, 0.10/4 = 0.025R, 0.40/7 = 0.057R. Position 14.5%, 20%, 14.3%. Table: reached by about 20%, 24%, 28% of dip trades, with 13%, 17%, 23% of them profitable: 2.6, 4.1, 6.4 points of winners lost, win rate 60%, 59%, 51%. The bail fires only on the day of the cross, at whatever distance the average is from the entry; for an entry 3% above the 200-day that is about -3% = -0.43R, -0.75R, -0.43R. Payoff aimed at: +2 ATR = 0.67R, 0.65R, 0.89R; break-even p = (1 + c) / (W + 1) = 62%, 62%, 56% if every loser were a full stop, lower in practice because the cross takes the trade out before the stop. Sizing: the 7% ceiling buys BIST a third more size than a plain 3 ATR stop (14.3% against 10.8%), paid for with about 9 more points of stop-outs."
+  },
+  {
+    "id": "stop_dip_weak_close_bail",
+    "family": "dip",
+    "stop": {
+      "initial": ["atr", 4.5],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "(ts_max(clv5, 3) < -0.3) & (ret5 < -2 * range14)"
+    },
+    "rationale": "A dip that is being absorbed closes off its lows. Three days in a row with the 5-day close location under -0.3, together with a 5-day loss larger than 2 ATR, means sellers are winning every session into the close, which is how the falls that did not stop looked. The trade leaves on that evidence; the 4.5 ATR stop is there only for gaps.",
+    "r_math": "Stop 4.5 ATR: risk S&P 500 10.35%, ETF 5.85%, BIST 13.95%; cost 0.019R, 0.017R, 0.029R; position 9.7%, 17.1%, 7.2%. Table: 4.5 ATR is reached by about 9.5%, 14%, 8.5% of dip trades and under a tenth of those would have won (0.6, 1.2, 0.9 points lost), so the stop itself barely touches the 63%, 63%, 57% win rate. The bail needs a 2 ATR loss over five days, so it leaves near -2 to -2.5 ATR = about -0.5R. Payoff aimed at: +2 ATR = 0.44R; with losers at 0.5R, break-even p = (0.5 + c) / (0.44 + 0.5) = 55%, 55%, 56%. Sizing: this is the widest dip stop in the set and the position is the smallest outside ETFs (under 10% on S&P 500 and BIST), so per account it can only win if the bail removes the large losers almost completely."
+  },
+  {
+    "id": "stop_dip_under_year_low",
+    "family": "dip",
+    "stop": {
+      "initial": ["expr", "where((low_gap250 / (1 + low_gap250) < 4.0 * range14), low_gap250 / (1 + low_gap250) + 0.5 * range14, 3.0 * range14)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "When the 52-week low is within 4 ATR of the signal close, the stop goes half an ATR under it: a new yearly low is where other stops and mandated selling sit, so a break of it changes the trade more than any ATR multiple does. When the low is further away it is no reference and the stop is a plain 3 ATR.",
+    "r_math": "low_gap250 / (1 + low_gap250) is the distance from the close down to the 52-week low. The stop is between 0.5 ATR (the walker's floor) and 4.5 ATR; with the low 2.5 ATR away it is 3 ATR, the same as the default branch: risk S&P 500 6.9%, ETF 3.9%, BIST 9.3%; cost 0.029R, 0.026R, 0.043R; position 14.5%, 20%, 10.8%. Table at 3 ATR: reached by 20%, 25%, 19% of dip trades, 13%, 17%, 17% of them profitable: 2.6, 4.3, 3.2 points of winners lost. For a dip sitting 1 ATR above its yearly low the stop is 1.5 ATR: risk 3.45%, 1.95%, 4.65%, cost 0.058R, 0.051R, 0.086R, reached by 43%, 47%, 42% of trades, and the payoff of +2 ATR becomes 1.33R, break-even p = (1 + c) / 2.33 = 45%. Sizing: in that tight case all three markets are capped at 20%, so the tightness buys only a smaller loss per stop-out, not more size."
+  },
+  {
+    "id": "stop_dip_skip_unsizeable",
+    "family": "dip",
+    "stop": {
+      "initial": ["expr", "where((2.5 * range14 > 0.10), 0, 2.5 * range14)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "A 2.5 ATR stop, and no trade at all when 2.5 ATR is more than 10% of price. At that volatility the 1% risk rule gives a position under a tenth of the account, the dip is usually a collapse rather than a pullback, and a tighter stop would only be noise. The formula returns zero for those signals, which the walker skips. This is the one design in the file that declines trades instead of only placing a stop.",
+    "r_math": "Trades taken have ATR at or under 4% of price. At the median: risk S&P 500 5.75%, ETF 3.25%, BIST 7.75%; cost 0.035R, 0.031R, 0.052R; position 17.4%, 20%, 12.9%, and never under 10% for any trade taken. Payoff aimed at: +2 ATR = 0.8R; break-even p = (1 + c) / 1.8 = 57.5%, 57.3%, 58.4% if every loser were a full stop. Table: 2.5 ATR is reached by 26%, 31%, 25% of dip trades, 18%, 23%, 21% of them profitable: 4.7, 7.1, 5.3 points of winners lost, win rate 58%, 56%, 52%, with a further tenth of trades ending as losers smaller than 1R. The table is pooled over all volatilities, so it cannot show the effect of the skip; with a median ATR of 3.1% a noticeable part of BIST signals will be skipped and almost none on ETFs. Sizing: ETF capped at 20% regardless."
+  },
+  {
+    "id": "stop_str_under_50d",
+    "family": "strength",
+    "stop": {
+      "initial": ["expr", "where((ma_gap50 > 0), clip(ma_gap50 / (1 + ma_gap50) + 0.5 * range14, 1.5 * range14, 5.0 * range14), 2.5 * range14)"],
+      "trail": ["low", 20],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "A trend trade is right as long as price holds above its 50-day average, so the first stop goes half an ATR under that average: R is the distance to the level that defines the trade. It is kept between 1.5 and 5 ATR, and an entry under the average gets 2.5 ATR. Afterwards the stop follows the 20-day low, which gives a trend the room the classic 10-day exits did not.",
+    "r_math": "ma_gap50 / (1 + ma_gap50) is the distance from the close down to the 50-day average. Typical entries: S&P 500 stock 5% above it: 4.76% + 1.15% = 5.9% = 2.6 ATR; ETF 3% above: 2.9% + 0.65% = 3.6% = 2.7 ATR; BIST stock 8% above: 7.4% + 1.55% = 8.95% = 2.9 ATR. Cost 0.034R, 0.028R, 0.045R. Position 16.9%, 20%, 11.2%. Table: reached by about 34%, 30%, 17% of strength trades, with 23%, 15%, 10% of them profitable: 7.8, 4.5, 1.7 points of winners lost, win rate 36%, 41%, 38%. Payoff aimed at: winners' median best move 7.4, 6.7, 6.4 ATR = 2.8R, 2.5R, 2.2R; if the 20-day-low trail keeps about half, W is about 1.4R, 1.25R, 1.1R and break-even p = (1 + c) / (W + 1) = 43%, 46%, 50% if every loser were a full stop; only 17-34% of trades are, the other losers leave by the rule or the raised trail for less. Sizing: on ETFs the stop is inside 5%, so the position is the 20% cap and the structural level costs no size."
+  },
+  {
+    "id": "stop_str_under_breakout_level",
+    "family": "strength",
+    "stop": {
+      "initial": ["expr", "where((brk20 > 0), clip(brk20 / (1 + brk20) + 1.0 * range14, 1.0 * range14, 3.0 * range14), 2.0 * range14)"],
+      "trail": ["low", 10],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "A breakout that falls back a full ATR under the level it broke has failed, whatever happens later, so the stop goes one ATR under the old 20-day closing high. This is a tight stop placed at a meaningful price, not a tight multiple. Entries that are not new 20-day highs get 2 ATR. The 10-day low then follows the trade.",
+    "r_math": "brk20 / (1 + brk20) is the distance from the close down to the old closing high. A breakout that clears it by 1%: S&P 500 0.99% + 2.3% = 3.3% = 1.43 ATR; ETF (0.5% clearance) 0.5% + 1.3% = 1.8% = 1.38 ATR; BIST (1.5%) 1.48% + 3.1% = 4.6% = 1.48 ATR. Cost 0.20/3.3 = 0.061R, 0.10/1.8 = 0.056R, 0.40/4.6 = 0.087R. Position 20% in all three, which is the cap: the account risks only 0.66%, 0.36%, 0.92% per trade. Table at 1.5 ATR: reached by 62%, 56%, 46% of strength trades, 28%, 24%, 17% of them profitable: 17.4, 13.4, 7.8 points of winners lost, win rate 27%, 33%, 32%. Payoff aimed at: winners' median best move 7.4, 6.7, 6.4 ATR = 5.2R, 4.9R, 4.3R; keeping half gives 2.6R, 2.4R, 2.2R and break-even p = (1 + c) / (W + 1) = 29.5%, 31%, 34%. So S&P 500 is short (27%), ETF is just over (33%), BIST just under (32%). Sizing: because every market is already capped, the tightness buys no size; the design can only win where winners seldom come back, which is BIST (winners' p90 worst move 2.1 ATR, median 0.7)."
+  },
+  {
+    "id": "stop_str_year_normal_width",
+    "family": "strength",
+    "stop": {
+      "initial": ["expr", "2.5 * range14 / clip(squeeze, 0.6, 1.3)"],
+      "trail": ["chandelier", 3.5],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "Breakouts often start from compressed volatility, when the ATR is at its smallest; a stop of a few of those small ATRs is taken out by the first ordinary day after volatility returns. Dividing by the band-width ratio sizes the stop in the stock's year-typical range: wider after compression, narrower after an expansion. A 3.5 ATR chandelier follows.",
+    "r_math": "At squeeze 0.7 (a compression breakout) the stop is 2.5/0.7 = 3.6 ATR: risk S&P 500 8.2%, ETF 4.6%, BIST 11.1%; cost 0.024R, 0.021R, 0.036R; position 12.2%, 20%, 9.0%. At squeeze 1.3 it is 1.9 ATR: risk 4.4%, 2.5%, 6.0%; position 20%, 20%, 16.7%. Table at 3.5 ATR: reached by about 22%, 19%, 12% of strength trades, 19%, 12.5%, 9% of them profitable: 4.2, 2.4, 1.1 points of winners lost, win rate 40%, 44%, 39%. Payoff aimed at: winners' median best move 7.4, 6.7, 6.4 ATR = 2.1R, 1.9R, 1.8R; the chandelier gives back 3.5 ATR (about 1R) from the high, so W is about 1.1R, 0.9R, 0.8R at the median and break-even p = (1 + c) / (W + 1) = 49%, 54%, 58% if every loser were a full stop; with only 12-22% full stops the hurdle is lower, but this design needs the upper half of winners (p75 best move 10 ATR = 2.8R) to pay. Sizing: ETF stays capped at 20%; on S&P 500 and BIST the wide branch costs 40-55% of the position. Signals without 250 days of history have no squeeze and are skipped."
+  },
+  {
+    "id": "stop_str_wide_chandelier",
+    "family": "strength",
+    "stop": {
+      "initial": ["atr", 2.5],
+      "trail": ["chandelier", 5.5],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": false,
+      "stall_days": null
+    },
+    "rationale": "The few large winners make the strength systems: their best move is 6 to 7 ATR at the median and over 10 at the upper quartile, and a trail of 2 to 4 ATR or a 10-day low sells them halfway. Here the trail stands 5.5 ATR under the highest high and the system's own exit is dropped, so only a real reversal or the time limit ends a winner. The first stop is 2.5 ATR.",
+    "r_math": "Stop 2.5 ATR: risk S&P 500 5.75%, ETF 3.25%, BIST 7.75%; cost 0.035R, 0.031R, 0.052R; position 17.4%, 20%, 12.9%. Table: 2.5 ATR is reached by 36%, 33%, 23% of strength trades, 23%, 16%, 12% of them profitable: 8.3, 5.3, 2.8 points of winners lost, win rate 36%, 41%, 37%. The trail passes the first stop once the trade has made +3 ATR and reaches the entry price at +5.5 ATR. A median winner (best move 7.4, 6.7, 6.4 ATR) is trailed out near +1 to +2 ATR (0.4-0.8R) or carried to the time limit with more; an upper-quartile winner (10 ATR and more) leaves near +4.5 ATR = 1.8R or better. Break-even for W = 1.8R: p = 1.035/2.8 = 37%, at the expected win rate, so the design pays only if the time limit, not the trail, ends most winners. Sizing: ETF capped at 20%; BIST carries 12.9% because 2.5 ATR is 7.75% of price."
+  },
+  {
+    "id": "stop_str_midchannel_bail",
+    "family": "strength",
+    "stop": {
+      "initial": ["atr", 2.0],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "(pos20 < 0.5)"
+    },
+    "rationale": "A breakout is bought at the top of its 20-day range. A close in the lower half of that range means the move has given back more than half of what made it a breakout, so the trade leaves at the next open. This is the middle line of the channel: tighter than a 20-day low, and unlike an ATR trail it widens when the range widens. A 2 ATR stop covers single-day falls.",
+    "r_math": "Stop 2 ATR: risk S&P 500 4.6%, ETF 2.6%, BIST 6.2%; cost 0.043R, 0.038R, 0.065R; position 20%, 20%, 16.1%. Table: 2 ATR is reached by 48%, 44%, 33% of strength trades, 25%, 20%, 14% of them profitable: 12.0, 8.8, 4.6 points of winners lost, win rate 32%, 37%, 35%. A 20-day range is about 5 to 6 ATR, so the middle line runs about 2.5-3 ATR under the high: at entry it sits near the stop, later it acts as a 2.5-3 ATR trail on closes. Payoff aimed at: median best move 7.4, 6.7, 6.4 ATR less about 2.75 ATR = +4.6, +3.9, +3.6 ATR = 2.3R, 2.0R, 1.8R; break-even p = (1 + c) / (W + 1) = 31.6%, 34.6%, 38.0% against the expected 32%, 37%, 35%: on the line everywhere, slightly ahead on ETF. Sizing: S&P 500 and ETF are at the 20% cap, so a tighter first stop would add nothing there."
+  },
+  {
+    "id": "stop_str_two_closes_under_50d",
+    "family": "strength",
+    "stop": {
+      "initial": ["atr", 3.0],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "(ma_gap50 < 0) & (lag(ma_gap50, 1) < 0)"
+    },
+    "rationale": "Most trend exits fire on the first close under an average, and half of those are one-day dips. Two consecutive closes under the 50-day average is the same idea with a confirmation: the trade is closed when the trend has broken, not when it has been tested. A 3 ATR stop stands underneath for a fall that does not wait for two closes.",
+    "r_math": "Stop 3 ATR: risk S&P 500 6.9%, ETF 3.9%, BIST 9.3%; cost 0.029R, 0.026R, 0.043R; position 14.5%, 20%, 10.8%. Table: 3 ATR is reached by 27%, 25%, 16% of strength trades, 21%, 14%, 10% of them profitable: 5.7, 3.5, 1.6 points of winners lost, win rate 38%, 42.5%, 38%. An entry 5% above the 50-day (about 2 ATR on S&P 500, 3.8 on ETF, 1.6 on BIST) is bailed near the average: about -2.2 ATR = -0.73R on S&P 500, at the stop on ETF, -0.6R on BIST. A median winner (7.4, 6.7, 6.4 ATR best) leaves when the average is crossed, which for a 30-day advance is roughly 3 ATR under the high: W about 1.4R, 1.2R, 1.1R; break-even p = (0.7 + c) / (W + 0.7) = 35%, 38%, 41% with losers averaging 0.7R, against 38%, 42.5%, 38%. Sizing: ETF capped at 20%; BIST at 10.8%."
+  },
+  {
+    "id": "stop_str_climax_bail",
+    "family": "strength",
+    "stop": {
+      "initial": ["atr", 2.5],
+      "trail": ["chandelier", 4.0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "(ret5 > 5 * range14) & (rvol > 2)"
+    },
+    "rationale": "A trail always gives back its own width from the top. When a trend ends in a climax, a 5-day gain of more than 5 ATR on a day of double volume, the top is marked while it happens, and selling into it keeps what a 4 ATR chandelier would return. Ordinary advances are left to the chandelier; only the vertical finish is sold.",
+    "r_math": "Stop 2.5 ATR: risk S&P 500 5.75%, ETF 3.25%, BIST 7.75%; cost 0.035R, 0.031R, 0.052R; position 17.4%, 20%, 12.9%. Table: 2.5 ATR is reached by 36%, 33%, 23% of strength trades (8.3, 5.3, 2.8 points of winners lost), win rate 36%, 41%, 37%. A climax needs +5 ATR in a week, so the bail sells at +5 ATR or more = +2R at least; the chandelier would have sold the same trade 4 ATR under the top, at +1 ATR or more = +0.4R, so each climax caught is worth up to 1.6R more, less whatever the trend adds after the sale. Winners' median best move is 7.4, 6.7, 6.4 ATR, so only the faster half of winners can produce one. Break-even for W = 2R: p = 1.035/3 = 34.5%, 34.4%, 35.1%, under the expected win rate in all three. Sizing: ETF capped at 20%; elsewhere 2.5 ATR sets the size."
+  },
+  {
+    "id": "stop_str_fast_fail_stall",
+    "family": "strength",
+    "stop": {
+      "initial": ["atr", 2.0],
+      "trail": ["low", 20],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": 3
+    },
+    "rationale": "A real breakout works at once. If the close is under the entry price on the third day in the trade, the buyers who were supposed to follow did not, and the trade is closed for a fraction of R before it reaches the stop. Three days is deliberately shorter than the grid's five and ten: strength winners spend little time under their entry.",
+    "r_math": "Stop 2 ATR: risk S&P 500 4.6%, ETF 2.6%, BIST 6.2%; cost 0.043R, 0.038R, 0.065R; position 20%, 20%, 16.1%. Table: 2 ATR is reached by 48%, 44%, 33% of strength trades (12.0, 8.8, 4.6 points of winners lost). Winners' median worst move is only 1.2, 0.9, 0.7 ATR and losers' median best move 1.2, 1.1, 1.0 ATR, so three days in, most losers are under the entry and most winners are not. A stall exit costs about 0.3-0.5 ATR = 0.15-0.25R. If it replaces half of the full stops, the average loss falls from 1R to about 0.6R and break-even for W = 2R is p = (0.6 + c) / 2.6 = 25%, 25%, 26%, against roughly 32-37% winners. The unknown is the share of winners under their entry on day 3; each one cut costs about 2R. Sizing: S&P 500 and ETF at the 20% cap."
+  },
+  {
+    "id": "stop_str_third_at_4r",
+    "family": "strength",
+    "stop": {
+      "initial": ["atr", 2.0],
+      "trail": ["chandelier", 4.0],
+      "breakeven_r": null,
+      "target_r": 4.0,
+      "target_part": 0.33,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "Selling half at 1R or 2R takes the profit before a trend trade has become one. Here a third is sold at 4R, 8 ATR above the entry, which only real winners reach, and two thirds stay on a 4 ATR chandelier. The sale pays for the trade several times over and leaves most of the position for the rare move that goes on to 15 ATR.",
+    "r_math": "Stop 2 ATR: risk S&P 500 4.6%, ETF 2.6%, BIST 6.2%; cost 0.043R, 0.038R, 0.065R; position 20%, 20%, 16.1%. Table: 2 ATR is reached by 48%, 44%, 33% of strength trades (12.0, 8.8, 4.6 points of winners lost), win rate 32%, 37%, 35%. The target is 8 ATR: above the winners' median best move (7.4, 6.7, 6.4) and under their p75 (about 10), so around 40% of winners fill it, about 13-15% of all trades. For those: 0.33 x 4R = 1.32R banked, and the remaining 0.67 is trailed 4 ATR under a high of at least 8 ATR, so it leaves at +2R or better: at least 1.32 + 0.67 x 2 = 2.66R. Winners that never reach 8 ATR leave by chandelier or rule with about 1R. Blended W near 1.7R: break-even p = (1 + c) / 2.7 = 38.6%, 38.4%, 39.4% if every loser were a full stop, about the expected win rate; the margin comes from losers that leave for less than 1R. Sizing: S&P 500 and ETF capped at 20%."
+  },
+  {
+    "id": "stop_str_efficiency_width",
+    "family": "strength",
+    "stop": {
+      "initial": ["expr", "where((er20 > 0.4), 1.5, 3.0) * range14"],
+      "trail": ["low", 10],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "A trend that has run in a nearly straight line for a month has shallow pullbacks; if it suddenly moves 1.5 ATR against a new entry its character has changed and the trade is wrong. A choppy advance pulls back 2 ATR as a matter of course and needs 3 ATR to survive. The stop width is read from how the stock has been moving, not fixed in advance.",
+    "r_math": "Efficient branch, 1.5 ATR: risk S&P 500 3.45%, ETF 1.95%, BIST 4.65%; cost 0.058R, 0.051R, 0.086R; position 20% everywhere (capped: the account risks 0.69%, 0.39%, 0.93%). Choppy branch, 3 ATR: risk 6.9%, 3.9%, 9.3%; cost 0.029R, 0.026R, 0.043R; position 14.5%, 20%, 10.8%. Table, pooled over all trends: 1.5 ATR is reached by 62%, 56%, 46% of strength trades with 28%, 24%, 17% of them profitable (win rate 27%, 33%, 32%); 3 ATR by 27%, 25%, 16% (win rate 38%, 42.5%, 38%). Payoff on the tight branch: median best move 7.4, 6.7, 6.4 ATR = 4.9R, 4.5R, 4.3R, half kept = 2.2-2.5R, break-even p = (1 + c) / 3.35 = 31.6%, 31.4%, 32.4%: met only if straight-line trends are stopped less often than the pooled 46-62%, which is the hypothesis being tested. Sizing: the tight branch is capped in all three markets, so it gains no size; its only benefit is a smaller loss per failed trade."
+  },
+  {
+    "id": "stop_str_distribution_bail",
+    "family": "strength",
+    "stop": {
+      "initial": ["atr", 3.0],
+      "trail": ["low", 20],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null,
+      "bail": "(cmf < -0.1) & (updown < -0.3)"
+    },
+    "rationale": "Price is the last thing to show that a trend is being sold. When money flow over 20 days is clearly negative and down-day volume outweighs up-day volume by a third, holders are leaving while the chart still looks intact; the trade is closed on that, ahead of the price stop. The 3 ATR stop and the 20-day low stay as the price-based exits.",
+    "r_math": "Stop 3 ATR: risk S&P 500 6.9%, ETF 3.9%, BIST 9.3%; cost 0.029R, 0.026R, 0.043R; position 14.5%, 20%, 10.8%. Table: 3 ATR is reached by 27%, 25%, 16% of strength trades, 21%, 14%, 10% of them profitable: 5.7, 3.5, 1.6 points of winners lost, win rate 38%, 42.5%, 38%. Both flow measures are 20-day sums, so the bail cannot fire in the first days after a breakout; it acts on trades that have stalled, where losers' median worst move (2.5, 2.6, 1.9 ATR) is still ahead of them. Leaving a stalled trade near -1 ATR costs 0.33R instead of the 0.6-1R it would reach. Payoff aimed at: half of the median best move, about 3.5 ATR = 1.2R; with losers averaging 0.6R, break-even p = (0.6 + c) / 1.8 = 35%, 35%, 36%, under the expected win rate. Sizing: ETF capped at 20%; BIST 10.8%."
+  },
+  {
+    "id": "stop_str_late_breakeven",
+    "family": "strength",
+    "stop": {
+      "initial": ["atr", 2.0],
+      "trail": ["low", 20],
+      "breakeven_r": 2.5,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "Moving the stop to the entry price at +1R or +2R catches winners in their first pullback. At +2.5R, 5 ATR above the entry, the move is larger than nine losers in ten ever show, so the stop is raised only on trades that have proved themselves, and a 5 ATR profit can no longer become a loss. The 20-day low trails underneath and is usually still below the entry at that point.",
+    "r_math": "Stop 2 ATR: risk S&P 500 4.6%, ETF 2.6%, BIST 6.2%; cost 0.043R, 0.038R, 0.065R; position 20%, 20%, 16.1%. Table: 2 ATR is reached by 48%, 44%, 33% of strength trades (12.0, 8.8, 4.6 points of winners lost), win rate 32%, 37%, 35%. +5 ATR is above the losers' p90 best move (4.3, 3.6, 3.6 ATR), so under 10% of losers get there, about 5% of all trades, and those end at -c instead of about -0.7R: roughly +0.035R per trade. It is under the winners' median best move (7.4, 6.7, 6.4), so about 60% of winners have their stop raised; those that return to the entry and would have recovered are the cost, and winners' p90 worst move of 2.1-3.4 ATR says few come back 5 ATR. Break-even for W = 2R: p = (1 + c) / 3 = 34.8%, 34.6%, 35.5%, about the expected win rate. Sizing: S&P 500 and ETF at the 20% cap."
+  },
+  {
+    "id": "stop_str_under_200d",
+    "family": "strength",
+    "stop": {
+      "initial": ["expr", "where((ma_gap200 > 0), clip(ma_gap200 / (1 + ma_gap200) + 1.0 * range14, 2.0 * range14, 6.0 * range14), 3.0 * range14)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "For the slow systems (golden-cross state, 55-day breakouts, trend entries on ETFs and BIST) the level that matters is the 200-day average. The stop goes one ATR under it, between 2 and 6 ATR from the close, and nothing trails: the system's own slow exit ends the trade. It is the widest strength stop here and is meant to be hit almost never.",
+    "r_math": "ma_gap200 / (1 + ma_gap200) is the distance from the close down to the 200-day average. Typical slow entries: S&P 500 stock 10% above it: 9.1% + 2.3% = 11.4% = 4.95 ATR; ETF 6% above: 5.66% + 1.3% = 7.0% = 5.4 ATR; BIST stock 15% above: 13.0% + 3.1% = 16.1% = 5.2 ATR. Cost 0.20/11.4 = 0.018R, 0.10/7.0 = 0.014R, 0.40/16.1 = 0.025R. Position 8.8%, 14.3%, 6.2%. Table at 5 ATR: reached by 11%, 8%, 4% of strength trades, 13%, 11%, 8% of them profitable: 1.4, 0.9, 0.3 points of winners lost, so the 44%, 46%, 40% win rate is nearly untouched. Payoff: median best move 7.4, 6.7, 6.4 ATR = 1.5R, 1.2R, 1.2R at most, perhaps 0.7R kept; with losers leaving by the rule at about 0.4R, break-even p = (0.4 + c) / 1.1 = 38%, 38%, 39%. Sizing: this is the smallest position in the file; per account it must beat tighter stops by avoiding stop-outs entirely, and on BIST it starts with a third of the size a 5% stop would carry."
+  },
+  {
+    "id": "stop_any_gap_aware_width",
+    "family": "any",
+    "stop": {
+      "initial": ["expr", "maximum(2.5 * range14, 4.0 * vol20)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "The ATR understates the risk of an instrument that moves in jumps between closes: its daily ranges look small while its closes travel far. The stop is the larger of 2.5 ATR and four daily standard deviations, so for an ordinary instrument it is about 2.5 ATR and for a gappy one it widens to what its closes actually do. No fixed ATR multiple can make that distinction.",
+    "r_math": "For an ordinary instrument the daily standard deviation is about ATR/1.5 (an assumption, not in the table), so 4 x vol20 is about 2.7 ATR and the stop is 2.5-2.7 ATR: risk S&P 500 5.75-6.2%, ETF 3.25-3.5%, BIST 7.75-8.4%; cost 0.035R, 0.031R, 0.052R; position 16-17.4%, 20%, 12-12.9%. For a gappy instrument whose standard deviation equals its ATR the stop is 4 ATR: risk 9.2%, 5.2%, 12.4%, position 10.9%, 19.2%, 8.1%. Table at 2.5 ATR: dip trades reach it 26%, 31%, 25% of the time (4.7, 7.1, 5.3 points of winners lost; win rate 58%, 56%, 52%); strength trades 36%, 33%, 23% (8.3, 5.3, 2.8 points; win rate 36%, 41%, 37%). Break-even: dip, W = 2 ATR = 0.8R, p = (1 + c) / 1.8 = 57.5%; strength, W = half of 7 ATR = 1.4R, p = (1 + c) / 2.4 = 43%, both if every loser were a full stop. Sizing: ETF stays at the 20% cap on both branches."
+  },
+  {
+    "id": "stop_any_free_room_floor",
+    "family": "any",
+    "stop": {
+      "initial": ["expr", "maximum(2.0 * range14, 0.05)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "With 1% of the account at risk and no position above 20%, a stop closer than 5% of price does not make the position any larger: it only adds stop-outs. So the stop is never closer than 5%, and where 2 ATR is more than 5% it is 2 ATR. Every instrument gets all the room that costs no size, which a single ATR multiple or a single percentage cannot give across calm and volatile instruments in the same market.",
+    "r_math": "S&P 500: 2 ATR = 4.6%, raised to 5% (2.17 ATR); ETF: 2.6%, raised to 5% (3.85 ATR); BIST: 2 ATR = 6.2%. Cost 0.20/5 = 0.040R, 0.10/5 = 0.020R, 0.40/6.2 = 0.065R. Position 20%, 20%, 16.1%. Table, ETF: a 5% stop is reached by about 18% of dip trades and 14% of strength trades, against 38% and 44% for a 2 ATR stop at exactly the same 20% position; winners lost fall from 11.0 to about 2.2 points (dip) and from 8.8 to about 1.6 (strength). S&P 500: about 31% of dip and 44% of strength trades. BIST: 32% and 33%. Break-even, ETF dip: W = 2 ATR = 2.6% = 0.52R, p = (1 + c) / 1.52 = 67% if every loser were a full stop, but only 18% of trades are, against a 61% win rate; ETF strength: W = half of 6.7 ATR = 4.4% = 0.87R, p = 1.02/1.87 = 55% on the same assumption with 14% full stops. For the median instrument this lands on a grid cell (5% on ETF and S&P 500, 2 ATR on BIST); the difference is inside each market, where volatile ETFs and calm BIST names get the other branch."
+  },
+  {
+    "id": "stop_any_full_size_cap",
+    "family": "any",
+    "stop": {
+      "initial": ["expr", "minimum(3.0 * range14, 0.05)"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "The mirror of the floor: the stop is 3 ATR but never further than 5% of price, so every trade is carried at the full 20% position. The choice in Phase 24 is made on the account's result, and a 9% stop on a volatile stock cuts the position to a ninth of the account; this design refuses that trade-off and accepts more stop-outs in volatile names for it.",
+    "r_math": "S&P 500: 3 ATR = 6.9%, cut to 5% (2.17 ATR); ETF: 3.9% (3 ATR); BIST: 9.3%, cut to 5% (1.61 ATR). Cost 0.20/5 = 0.040R, 0.10/3.9 = 0.026R, 0.40/5 = 0.080R. Position 20% in all three, with the account risking 1%, 0.78%, 1% per trade. Table, dip: reached by about 31%, 25%, 40% of trades (roughly 7.5, 4.3, 12 points of winners lost; win rate 55%, 59%, 45%); strength: about 44%, 25%, 42% (roughly 11, 3.5, 7 points; win rate 33%, 42.5%, 33%). Break-even, dip: W = 2 ATR = 0.92R, 0.67R, 1.24R, p = (1 + c) / (W + 1) = 54%, 61%, 48%; strength: W = half the median best move = 1.7R, 1.1R, 2.0R, p = 39%, 49%, 36%. Against the win rates above: dips are level on S&P 500, short on ETF and BIST; strength is short on S&P 500 and ETF and near on BIST. Compared with a plain 3 ATR stop the position is 38% larger on S&P 500 and 85% larger on BIST, which is the entire case for it."
+  },
+  {
+    "id": "stop_any_entry_type_switch",
+    "family": "any",
+    "stop": {
+      "initial": ["expr", "where((z20 < 0), 3.5, 2.0) * range14"],
+      "trail": ["none", 0],
+      "breakeven_r": null,
+      "target_r": null,
+      "target_part": 1,
+      "rule_exit": true,
+      "stall_days": null
+    },
+    "rationale": "One policy for every system, switched by where the entry is: bought under the 20-day average it is a dip, with small wins and a high win rate, so it gets 3.5 ATR and is rarely stopped; bought above the average it is a strength trade, with large wins and a low win rate, so it can afford a 2 ATR stop. The excursion table says the two kinds of trade need opposite stops, and this is the smallest rule that gives each its own.",
+    "r_math": "Dip branch, 3.5 ATR: risk S&P 500 8.05%, ETF 4.55%, BIST 10.85%; cost 0.025R, 0.022R, 0.037R; position 12.4%, 20%, 9.2%; reached by 16%, 21%, 15% of dip trades with 1.7, 2.9, 2.3 points of winners lost (win rate 61%, 60%, 55%); payoff +2 ATR = 0.57R, break-even p = (1 + c) / 1.57 = 65% if every loser were a full stop, with only a sixth of trades being one. Strength branch, 2 ATR: risk 4.6%, 2.6%, 6.2%; cost 0.043R, 0.038R, 0.065R; position 20%, 20%, 16.1%; reached by 48%, 44%, 33% of strength trades with 12.0, 8.8, 4.6 points of winners lost (win rate 32%, 37%, 35%); payoff half the median best move = 3.7, 3.35, 3.2 ATR = 1.85R, 1.7R, 1.6R, break-even p = (1 + c) / (W + 1) = 36.6%, 38.4%, 41%. Sizing: on ETFs both branches are capped at 20%, so the dip branch's extra room is free there; on S&P 500 and BIST the dip branch carries about half the position of the strength branch."
+  }
+]

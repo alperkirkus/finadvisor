@@ -1,0 +1,482 @@
+[
+  {
+    "id": "close_strength_down_week",
+    "type": "event",
+    "expr": "(clv5 > 0.2) & (ret5 < -0.03)",
+    "horizon": 5,
+    "rationale": "Follow-up of close_strength_vs_return (t +2.2) as a rare, sharp event: the week lost more than 3% yet every session closed near its high, so the loss came overnight while end-of-day institutional buyers kept absorbing it. Expect higher. Combines bar shape with momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "weak_closes_extended",
+    "type": "event",
+    "expr": "(ma_gap50 > 0.05) & (ts_mean(clv5, 10) < -0.1)",
+    "horizon": 20,
+    "rationale": "Follow-up of weak_closes_overbought (t -1.6) in a slower form: two weeks of closes in the lower half of the range while price is 5% above its 50-day average is sustained selling into strength by holders who know more. Expect LOWER. Combines trend with persistent bar shape.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "overnight_volume_reversal",
+    "type": "rank",
+    "expr": "rank(-ts_mean(gap * rvol, 20))",
+    "horizon": 20,
+    "rationale": "Follow-up of gap_on_volume, whose data sign was negative: opening gaps on heavy volume overshoot because the open is the least liquid moment for news-driven orders. A month of volume-weighted overnight gains should be given back, at monthly instead of weekly turnover. Combines bar shape (gap) with volume.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "gap_up_volume_fade",
+    "type": "event",
+    "expr": "(ts_max(gap, 5) > 0.03) & (ts_max(rvol, 5) > 2) & (lag(ma_gap200, 5) > 0)",
+    "horizon": 60,
+    "rationale": "Follow-up of gap_up_uptrend, which returned 1% less over 60 days: a large gap up on climax volume in a stock already in an uptrend is good news arriving where expectations were already high, drawing in late attention buyers. Expect LOWER. Combines bar shape, volume and trend.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "attention_buying_fade",
+    "type": "event",
+    "expr": "(ts_mean(rvol, 5) > 1.3) & (clv5 > 0.2) & (ret5 > 0.03)",
+    "horizon": 20,
+    "rationale": "Follow-up of volume_strong_close (t -1.7, sign opposite to the first guess): a week of heavy volume, strong closes and a rising price is attention-driven buying pressure that pushes price above value and then fades. Expect LOWER. Combines volume, bar shape and momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "dryup_near_high_winner",
+    "type": "event",
+    "expr": "(high_gap250 > -0.05) & (squeeze < 0.7) & (vol_trend < 0.8) & (mom12_1 > 0.15)",
+    "horizon": 60,
+    "rationale": "Follow-up of dryup_near_high (t +1.5) restricted to where the mechanism should bite: a tight, low-volume pause near the high means something only after a real advance, when holders with gains choose not to sell. Expect higher. Combines stretch, volatility change, volume and momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "deep_dip_strong_trend",
+    "type": "event",
+    "expr": "(ma_gap200 > 0) & (ma_cross > 0.05) & (z20 < -2)",
+    "horizon": 20,
+    "rationale": "Follow-up of the pullback-in-uptrend event (t +1.5) made rarer and deeper: a two-sigma break below the 20-day band while the 50-day is well above the 200-day is a liquidity dip in an established trend. Expect higher. Combines trend with stretch.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "neglected_loser_recovery",
+    "type": "event",
+    "expr": "(rank(mom12_1) < 0.2) & (rank(liquidity) < 0.3)",
+    "horizon": 60,
+    "rationale": "Follow-up of neglected_momentum in the direction the data showed (momentum reversed in less-traded names): 12-month losers among the least-traded members are pushed below value by sellers with few buyers on the other side, and recover. Expect higher. Combines momentum with size/liquidity.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "loser_rally_fade",
+    "type": "event",
+    "expr": "(mom12_1 < -0.2) & (ma_gap50 > 0.05) & (ma_gap200 < 0)",
+    "horizon": 60,
+    "rationale": "Follow-up of loser_turnaround in the direction the data showed (t -3.2): a 12-month loser that has jumped above its 50-day but is still below its 200-day is in a short-covering rally that meets holders waiting to sell at a smaller loss. Expect LOWER. Combines momentum with two trend measures.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "persistent_orderly_advance",
+    "type": "rank",
+    "expr": "rank(ts_mean(slope20, 20)) + rank(-ts_mean(range_ratio, 20))",
+    "horizon": 60,
+    "rationale": "Follow-up of orderly_advance (t +1.3, positive after costs) in a slower form: a slope that stayed positive and a range that stayed contracted for a month marks a long institutional buy programme, held for 60 days to cut turnover. Combines trend with volatility change.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "neglected_calm_tail",
+    "type": "event",
+    "expr": "(rank(liquidity) < 0.3) & (rank(range14) < 0.3)",
+    "horizon": 60,
+    "rationale": "Follow-up of neglected_calm (highest IC of round 1, +0.025) as a tail event: members that are both among the least traded and the calmest are ignored by attention-driven and benchmark-constrained investors and earn a neglect premium. Expect higher. Combines size/liquidity with volatility.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "basing_event",
+    "type": "event",
+    "expr": "(ma_gap200 < -0.1) & (range_ratio < 0.8) & (cmf > 0)",
+    "horizon": 60,
+    "rationale": "Follow-up of basing_below_200d (t +1.2) as a strict event: more than 10% below the 200-day, with the daily range contracting and money flow already positive, is forced selling that has ended and is being absorbed. Expect higher. Combines trend, volatility change and volume-and-price flow.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "gap_down_uptrend_drift",
+    "type": "event",
+    "expr": "(ts_min(gap, 5) < -0.03) & (lag(ma_gap200, 5) > 0)",
+    "horizon": 20,
+    "rationale": "Follow-up of gap_down_uptrend (t -1.3, positive after costs at 5 days) with a larger gap and a 20-day hold: the first serious bad news against a favourable prior is revised in steps by holders and analysts. Expect LOWER. Combines bar shape (gap) with trend.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "crowded_winner_fade",
+    "type": "event",
+    "expr": "(ret60 > 0.2) & (ts_mean(cmf, 40) > 0.1)",
+    "horizon": 60,
+    "rationale": "Follow-up of flow_backed_momentum in the direction the data showed (t -1.3): a 20% three-month gain with persistently strong money flow means the buyers are already in, leaving the stock crowded and exposed to profit taking. Expect LOWER. Combines momentum with volume-and-price flow.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "washout_heavy_volume",
+    "type": "event",
+    "expr": "(ret5 < -0.08) & (ts_mean(rvol, 5) > 1.5)",
+    "horizon": 5,
+    "rationale": "Follow-up of rev_heavy_volume (t +1.4, killed by costs as a weekly tilt) kept only at its extreme: an 8% weekly loss on a full week of heavy volume is forced selling, where the liquidity premium per trade is large enough to pay costs. Expect higher. Combines momentum with volume.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "sigma_crash_week",
+    "type": "event",
+    "expr": "(ret5 / lag(vol20, 5) < -6)",
+    "horizon": 5,
+    "rationale": "A weekly loss of roughly three of the stock's own weekly standard deviations (measured before the fall) is an outlier for that stock whatever its usual volatility; risk limits force selling beyond the news. Expect higher. Combines momentum with the stock's own volatility.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "sigma_surge_week",
+    "type": "event",
+    "expr": "(ret5 / lag(vol20, 5) > 6)",
+    "horizon": 5,
+    "rationale": "A weekly gain of roughly three of the stock's own weekly standard deviations draws attention and short covering that overshoot, the mirror of the crash case; the pair tests whether over-reaction is symmetric. Expect LOWER. Combines momentum with the stock's own volatility.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "down_streak_oversold",
+    "type": "event",
+    "expr": "(ts_max(ret1, 5) < 0) & (z20 < -1.5)",
+    "horizon": 5,
+    "rationale": "Five consecutive down closes that end below the lower band: streaks trigger stop-losses and extrapolating sellers, a persistence effect that a weekly return alone does not capture. Expect higher. Combines momentum persistence with stretch.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "blowoff_new_high",
+    "type": "event",
+    "expr": "(ret5 > 0.05) & (high_gap250 > -0.02) & (ts_max(rvol, 5) > 2)",
+    "horizon": 5,
+    "rationale": "A 5% week that ends at the 52-week high on climax volume is the point of maximum attention, where the last momentum buyers enter and holders anchored on the high sell to them. Expect LOWER. Combines momentum, stretch (52-week high) and volume.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "outlier_gap_down_recovered",
+    "type": "event",
+    "expr": "(ts_z(gap, 60) < -2) & (ret1 > gap)",
+    "horizon": 5,
+    "rationale": "An opening gap down that is an outlier against the stock's own last 60 gaps, followed by a close above the open: the open overshot the news and buyers corrected it within the day, and the correction is rarely complete in one session. Expect higher. Combines bar shape (gap against its own history) with momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "outlier_gap_up_faded",
+    "type": "event",
+    "expr": "(ts_z(gap, 60) > 2) & (ret1 < gap)",
+    "horizon": 5,
+    "rationale": "An opening gap up that is an outlier against the stock's own history and is then sold all day: holders used the opening enthusiasm to exit, which round 1 suggested for gaps on volume. Expect LOWER. Combines bar shape (gap against its own history) with momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "new_low_climax",
+    "type": "event",
+    "expr": "(low_gap250 < 0.03) & (ret5 < -0.05) & (ts_max(rvol, 5) > 2)",
+    "horizon": 5,
+    "rationale": "A 5% weekly fall to the 52-week low on climax volume is where stop-losses, margin calls and mandate-driven selling cluster; the open question is whether that marks exhaustion or more to come. Expect higher. Combines stretch (52-week low), momentum and volume.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "calm_regime_breakout",
+    "type": "event",
+    "expr": "(ts_z(vol20, 60) < -1) & (z20 > 1.5)",
+    "horizon": 5,
+    "rationale": "When a stock's volatility is low against its own last three months, a move to the upper band is not noise: something changed in a quiet market and the price has only begun to adjust. Expect higher. Combines the stock's own volatility regime with stretch.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "hot_regime_overbought",
+    "type": "event",
+    "expr": "(ts_z(vol20, 60) > 1.5) & (z20 > 1.5)",
+    "horizon": 5,
+    "rationale": "When a stock's volatility is high against its own past, a move to the upper band is a swing inside a disorderly market and tends to be reversed; this is the other half of the regime switch between continuation and reversal. Expect LOWER. Combines the stock's own volatility regime with stretch.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "selling_dried_up",
+    "type": "event",
+    "expr": "(ts_mean(rvol, 5) < 0.8) & (pos20 < 0.2)",
+    "horizon": 5,
+    "rationale": "Price sits at the bottom of its 20-day range but the whole week traded well below normal volume: nobody is left who wants to sell at these prices, so a small amount of demand lifts it. Expect higher. Combines volume with stretch (stochastic position).",
+    "source": "agent-round2"
+  },
+  {
+    "id": "vol_regime_switch",
+    "type": "rank",
+    "expr": "(rank(ret20) - 0.5) * (0.5 - rank(ts_z(vol20, 60)))",
+    "horizon": 20,
+    "rationale": "The stock's own volatility regime decides what a monthly return means: in a calm regime it is information that continues, in a turbulent regime it is liquidity pressure that reverses. Calm winners and turbulent losers score high. Combines momentum with volatility against its own history.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "down_volume_exhaustion",
+    "type": "rank",
+    "expr": "rank(-updown) + rank(-z20) + rank(-range_ratio)",
+    "horizon": 20,
+    "rationale": "A month dominated by down-day volume, a price stretched below its band and a range that has started to contract together describe a liquidation that has run its course. Combines the up/down volume asymmetry, stretch and volatility change.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "vol_target_flow",
+    "type": "rank",
+    "expr": "rank(lag(vol20, 20) / vol20) + rank(ma_gap200)",
+    "horizon": 20,
+    "rationale": "Risk-budgeted and volatility-targeting investors add to a position mechanically when its volatility falls; a stock in an uptrend whose volatility dropped over the last month receives that flow. Combines volatility change against its own past with trend.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "noise_ratio_reversal",
+    "type": "rank",
+    "expr": "(rank(-ret20) - 0.5) * rank(range14 / vol20)",
+    "horizon": 20,
+    "rationale": "A large intraday range relative to close-to-close volatility means most of the movement is undone within the day, the mark of liquidity noise; monthly reversal should exist there and not where moves stick. Combines momentum with two volatility measures (range against close-to-close).",
+    "source": "agent-round2"
+  },
+  {
+    "id": "calm_uptrend_dip",
+    "type": "rank",
+    "expr": "(rank(-z20) - 0.5) * rank(ma_gap200) * rank(-ts_z(vol20, 60))",
+    "horizon": 20,
+    "rationale": "A dip is safest to buy when the stock is above its 200-day average and its own volatility is low for it: the dip then reflects a seller needing liquidity, not a change in the story. Three-way interaction of stretch, trend and own-volatility regime.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "stealth_flow",
+    "type": "rank",
+    "expr": "(rank(cmf) - 0.5) * rank(vol_trend / range_ratio)",
+    "horizon": 20,
+    "rationale": "Turnover rising while the daily range shrinks is unusual and points to a large patient order being worked; in that state the sign of money flow reveals which side the patient trader is on. Combines volume-and-price flow, volume trend and volatility change.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "overnight_share_switch",
+    "type": "rank",
+    "expr": "(rank(ret20) - 0.5) * (rank(ts_mean(abs(gap), 20) / range14) - 0.5)",
+    "horizon": 20,
+    "rationale": "When much of a stock's movement happens overnight it is being driven by news, which is absorbed slowly and continues; when movement is mostly intraday it is trading pressure, which reverses. Combines momentum, bar shape (gap size) and volatility.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "trend_strength_fading",
+    "type": "rank",
+    "expr": "(rank(ret60) - 0.5) * (rank(delta(adx, 20)) - 0.5)",
+    "horizon": 20,
+    "rationale": "The change in trend strength, not its level, says whether a three-month move is still alive: a rising ADX means the move is being extended, a collapsing ADX means it is over and positions are being unwound. Combines momentum with the change in trend strength.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "quiet_up_day_breadth",
+    "type": "rank",
+    "expr": "rank(ts_mean(sign(ret1), 20)) - rank(ret20) + rank(-ts_max(rvol, 20))",
+    "horizon": 20,
+    "rationale": "Many up days, a small total gain and no volume spike all month describe steady buying in small clips that has not yet moved the price or attracted attention; the price should catch up. Combines momentum persistence (share of up days) with volume.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "absorption_churn",
+    "type": "event",
+    "expr": "(ts_mean(rvol, 5) > 1.3) & (abs(ret5) < 0.01) & (ma_gap50 < 0)",
+    "horizon": 20,
+    "rationale": "A week of heavy volume with no net price change, below the 50-day average, means a large amount of stock changed hands without the price falling further: supply was absorbed by stronger hands. Expect higher. Combines volume, momentum (flat price) and trend.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "persistent_overbought_calm",
+    "type": "event",
+    "expr": "(ts_min(rsi, 10) > 60) & (ts_z(vol20, 60) < 0)",
+    "horizon": 20,
+    "rationale": "RSI that has stayed above 60 for ten straight days while the stock's volatility is below its own norm is persistent, orderly demand; contrarians who sell the first overbought reading are repeatedly wrong in such phases. Expect higher. Combines persistent stretch with own-volatility regime.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "persistent_distribution_near_high",
+    "type": "event",
+    "expr": "(ts_max(cmf, 20) < 0) & (high_gap250 > -0.1)",
+    "horizon": 20,
+    "rationale": "Money flow that has been negative every day for a month while price is still within 10% of its 52-week high means closes are consistently weak under a price that looks fine: supply is being fed out before the level breaks. Expect LOWER. Combines persistent volume-and-price flow with stretch.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "skew_premium",
+    "type": "rank",
+    "expr": "rank(ts_mean(minimum(ret1, 0) ** 2, 60) / ts_mean(ret1 ** 2, 60)) + rank(-range14)",
+    "horizon": 60,
+    "rationale": "Stocks whose variance comes mostly from down days have no lottery appeal and must pay a premium, while stocks with variance from up days are overpaid for by skewness-seeking buyers; the low-range filter removes names where downside variance is distress. Combines daily-return asymmetry with volatility.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "busted_winner",
+    "type": "rank",
+    "expr": "rank(high_gap250) - rank(ret250)",
+    "horizon": 60,
+    "rationale": "A large one-year return combined with a price now far below the 52-week high is a winner that has already broken, and holders who missed the top sell every bounce; a modest return close to the high is a quiet riser nobody needs to sell. Combines stretch (52-week high) with momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "loser_vol_normalised",
+    "type": "rank",
+    "expr": "rank(-ret250) + rank(-ts_z(vol20, 60))",
+    "horizon": 60,
+    "rationale": "A one-year loser whose volatility has dropped below its own three-month norm has stopped attracting forced sellers and bad news; the long-term over-reaction can start to unwind once the panic is over. Combines momentum with volatility against its own history.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "base_accumulation",
+    "type": "rank",
+    "expr": "rank(ts_mean(updown, 40)) + rank(-squeeze) + rank(-vol_trend)",
+    "horizon": 60,
+    "rationale": "Up-day volume dominating for two months inside tight bands and falling turnover is accumulation in a base: the buying shows only in which days carry the volume. Combines the up/down volume asymmetry, volatility change and volume trend.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "overnight_risk_premium",
+    "type": "rank",
+    "expr": "rank(ts_mean(abs(gap), 60) / ts_mean(range14, 60))",
+    "horizon": 60,
+    "rationale": "Risk that arrives while the market is closed cannot be traded out of or hedged intraday, so stocks whose movement is concentrated in opening gaps should compensate their holders more than stocks with the same total range. Combines bar shape (gap size) with volatility.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "uncrowded_persistent_trend",
+    "type": "rank",
+    "expr": "rank(ts_mean(sign(ma_gap50), 60)) + rank(-delta(liquidity, 60))",
+    "horizon": 60,
+    "rationale": "A stock that spent most of the last quarter above its 50-day average while its dollar volume shrank is in a trend that few are chasing; trends end when participation peaks, not when it falls. Combines trend persistence with the change in liquidity.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "long_coil_above_support",
+    "type": "event",
+    "expr": "(ts_max(squeeze, 20) < 0.8) & (ts_min(ma_gap50, 20) > 0)",
+    "horizon": 60,
+    "rationale": "Bands that stayed compressed for a full month while price never closed below its 50-day average is a long, tight consolidation above support: sellers had a month to appear and did not. Expect higher. Combines persistent volatility compression with persistent trend.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "reclaim_200d",
+    "type": "event",
+    "expr": "(ts_max(lag(ma_gap200, 10), 60) < 0) & (ma_gap200 > 0) & (high_gap250 < -0.15)",
+    "horizon": 60,
+    "rationale": "The first close above the 200-day average after at least three months entirely below it is a widely watched buy signal, but with price still more than 15% under its 52-week high there are many holders above waiting to sell at a smaller loss; round 1 suggested such rallies fade. Expect LOWER. Combines trend persistence with stretch (52-week high).",
+    "source": "agent-round2"
+  },
+  {
+    "id": "year_low_calm",
+    "type": "rank",
+    "expr": "rank(-low_gap250) + rank(-ts_mean(vol20, 60))",
+    "horizon": 60,
+    "rationale": "A stock near its 52-week low with low volatility over the last quarter is out of favour rather than in distress; dull names at their lows are dropped by performance chasers and recover slowly. Slow components only. Combines stretch (52-week low) with volatility.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "slow_accumulation_loser",
+    "type": "rank",
+    "expr": "rank(ts_mean(updown, 60)) + rank(-ret250)",
+    "horizon": 60,
+    "rationale": "A one-year loser in which up-day volume has dominated for a full quarter is being bought by investors with long horizons while the price history still looks bad. Slow components only. Combines the up/down volume asymmetry with momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "persistent_calm_uptrend",
+    "type": "event",
+    "expr": "(ts_min(ma_cross, 60) > 0.02) & (ts_max(range14, 60) < 0.02)",
+    "horizon": 60,
+    "rationale": "The 50-day above the 200-day for a whole quarter and a daily range that never exceeded 2% in that time is a mature, quiet uptrend, held by investors who rarely trade; such states end slowly. Expect higher. Slow components only. Combines persistent trend with persistent low volatility.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "fading_attention_below_trend",
+    "type": "rank",
+    "expr": "rank(-delta(liquidity, 60)) + rank(-ma_gap200)",
+    "horizon": 60,
+    "rationale": "A stock below its 200-day average whose dollar volume has fallen over the quarter has been abandoned rather than actively sold; neglect leaves it cheap until attention returns. Slow components only. Combines the change in liquidity with trend.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "sharpe_momentum",
+    "type": "rank",
+    "expr": "rank(mom12_1 / ts_mean(vol20, 60))",
+    "horizon": 60,
+    "rationale": "Twelve-month return per unit of the stock's volatility separates steady repricing from a volatile name that happened to land higher; under-reaction belongs to the first kind. Slow components only. Combines momentum with volatility in one ratio.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "tight_year_range",
+    "type": "event",
+    "expr": "((low_gap250 - high_gap250) < 0.25) & (ma_cross > 0)",
+    "horizon": 60,
+    "rationale": "A whole year spent inside a range of about 25% with the 50-day above the 200-day is a stock that compounds without drama and without attention; low-drama names are under-owned by performance chasers. Expect higher. Slow components only. Combines stretch (52-week range width) with trend.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "story_stock_fade",
+    "type": "event",
+    "expr": "(low_gap250 > 0.8) & (delta(liquidity, 60) > 0.3)",
+    "horizon": 60,
+    "rationale": "A price more than 80% above its 52-week low together with dollar volume up by a third over the quarter is a story stock at peak participation, when the marginal buyer is the least informed. Expect LOWER. Slow components only. Combines stretch (52-week low) with the change in liquidity.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "momentum_vol_switch",
+    "type": "rank",
+    "expr": "(rank(mom12_1) - 0.5) * (0.5 - rank(ts_mean(vol20, 60)))",
+    "horizon": 60,
+    "rationale": "Momentum works in calm stocks, where it reflects slow information, and reverses in turbulent ones, where past losers are option-like and rebound hard; round 1 only tested the two added together, not the switch. Slow components only. Combines momentum with volatility as an interaction.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "cal_halfyear_end_losers",
+    "type": "event",
+    "expr": "(days_left <= 4) & ((month == 6) | (month == 12)) & (rank(ret60) < 0.25)",
+    "horizon": 20,
+    "rationale": "In the last week of June and December funds remove the quarter's worst performers from the holdings they must report; the pressure ends at the turn and the names recover. Extends the quarter-end reversal finding from stretch to three-month losers. Expect higher. Combines calendar with momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "cal_mar_sep_end_stretch",
+    "type": "event",
+    "expr": "(days_left <= 4) & ((month == 3) | (month == 9)) & (z20 < -1)",
+    "horizon": 20,
+    "rationale": "Control for the June/December finding: if the reversal comes from quarterly window dressing it should also appear at the end of March and September; if it comes from half-year reporting or tax selling it should not. Expect higher. Combines calendar with stretch.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "cal_window_dressing_winners",
+    "type": "event",
+    "expr": "(days_left <= 4) & ((month == 3) | (month == 6) | (month == 9) | (month == 12)) & (rank(ret60) > 0.8)",
+    "horizon": 20,
+    "rationale": "The other side of window dressing: in the last week of a quarter funds buy the quarter's winners so they appear in the report, and that demand disappears once the quarter has turned. Expect LOWER. Combines calendar with momentum.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "cal_yearend_taxloss",
+    "type": "event",
+    "expr": "(month == 12) & (days_left <= 9) & (ret250 < -0.1)",
+    "horizon": 20,
+    "rationale": "Investors realise losses before the tax year closes, so stocks down over the past year are sold in late December for a reason unrelated to value and rebound in January when the selling stops. Expect higher. Combines calendar with one-year return.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "cal_december_winner_deferral",
+    "type": "event",
+    "expr": "(month == 12) & (days_left <= 9) & (high_gap250 > -0.05)",
+    "horizon": 20,
+    "rationale": "Holders of stocks near their 52-week high postpone taking gains until the new tax year, which props the price up in late December and releases the selling in January. Expect LOWER. Combines calendar with stretch (52-week high).",
+    "source": "agent-round2"
+  },
+  {
+    "id": "cal_earnings_season_gap",
+    "type": "event",
+    "expr": "((month == 1) | (month == 4) | (month == 7) | (month == 10)) & (days_in >= 10) & (ts_max(gap, 5) > 0.03) & (ts_max(rvol, 5) > 2)",
+    "horizon": 60,
+    "rationale": "In the second half of January, April, July and October a large gap up on heavy volume is almost always an earnings report, the one kind of gap with a documented post-announcement drift; this tests whether those gaps differ from the gaps that faded in round 1. Expect higher. Combines calendar, bar shape and volume.",
+    "source": "agent-round2"
+  },
+  {
+    "id": "cal_ordinary_month_end_stretch",
+    "type": "event",
+    "expr": "(days_left <= 4) & (month != 3) & (month != 6) & (month != 9) & (month != 12) & (z20 < -1)",
+    "horizon": 20,
+    "rationale": "Month-end pension and savings inflows and monthly rebalancing exist in every month, not only at quarter ends; this measures whether the reversal after a stretched month-end appears in the eight ordinary months, completing the split with the June/December and March/September cases. Expect higher. Combines calendar with stretch.",
+    "source": "agent-round2"
+  }
+]

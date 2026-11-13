@@ -102,13 +102,13 @@ def days_to_cover(rec):
 
 
 def _universe(midsmall):
-    aliases = json.load(open(S.ALIASES)) if os.path.exists(S.ALIASES) else {}
     if midsmall:
         uni, _, _ = U.midsmall_universe(start="2018-01-01")
         return {U.yahoo_symbol(t): (r["intervals"], r["cik"]) for t, r in uni.items()}
-    uni, _ = U.backtest_universe(start="2018-01-01")
-    return {aliases.get(U.yahoo_symbol(t), U.yahoo_symbol(t)): (r["intervals"], r["cik"])
-            for t, r in uni.items()}
+    # Daily volume and FINRA's file are keyed by a live symbol; members read
+    # from the outside price file have neither.
+    uni, _ = U.backtest_universe(start="2018-01-01", outside=False)
+    return {r["symbol"]: (r["intervals"], r["cik"]) for r in uni.values()}
 
 
 def observations(midsmall, last_settlement="2025-12-31"):

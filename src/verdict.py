@@ -55,6 +55,28 @@ def _span(months):
     return "%d ay" % months if months < 12 else "%d yıl" % (months // 12)
 
 
+# The price is called expensive, near or cheap against its fair value at
+# these bounds everywhere it is shown; the verdict uses the same line.
+NEAR_FAIR = 0.10
+
+
+def wait_key(upside, expected_months):
+    """How long a fair-value target like this one has taken, as a filter key:
+    "near" when the price already sits at fair value, the month count when
+    half of such targets were reached by then, "long" when they were not."""
+    if abs(upside) < NEAR_FAIR:
+        return "near"
+    return str(expected_months) if expected_months else "long"
+
+
+def wait_label(key):
+    if key == "near":
+        return "Yakın"
+    if key == "long":
+        return "%s+" % _span(FV_HORIZONS[-1])
+    return "~%s" % _span(int(key))
+
+
 def upside_band(upside):
     if upside is None:
         return None
@@ -147,6 +169,7 @@ def fair_value_read(val):
     return {"key": "fair_value", "name": "Adil değer hedefi", "value": upside,
             "method": method, "band": band, "horizons": horizons,
             "expected_months": expected,
+            "wait": wait_key(upside, expected),
             "expected_span": _span(expected) if expected else None,
             "annualised": annualised,
             "market_annual": table.get("universe_annual_return"),
@@ -216,14 +239,75 @@ def issuance_read(val):
                          "denendiği için tek başına güçlü kanıt değildir.")}
 
 
-def fall_risk(val):
+RISK_TABLE = os.path.join(os.path.dirname(__file__), "..", "data", "risk_table.json")
+RISK_WORDS = {1: ("çok düşük", "good"), 2: ("düşük", "good"), 3: ("orta", "neutral"),
+              4: ("yüksek", "warning"), 5: ("çok yüksek", "critical")}
+RISK_PLACE = {1: "en sakin beşte birde", 2: "ikinci beşte birde", 3: "ortadaki beşte birde",
+              4: "dördüncü beşte birde", 5: "en oynak beşte birde"}
+
+
+def range_cuts(values):
+    """The four values that split a day's companies into fifths by daily
+    range, or None when there are too few to split."""
+    values = sorted(v for v in values if v is not None)
+    if len(values) < 100:
+        return None
+    return [values[len(values) * k // 5] for k in range(1, 5)]
+
+
+def range_quintile(value, cuts):
+    return 1 + sum(value >= c for c in cuts)
+
+
+def _risk_table():
+    if not hasattr(_risk_table, "table"):
+        _risk_table.table = (json.load(open(RISK_TABLE))
+                             if os.path.exists(RISK_TABLE) else None)
+    return _risk_table.table
+
+
+def fall_risk(val, cuts=None):
     """Measured base rate of a >25% fall over 12 months for companies like this.
 
-    The backtest's most consistent finding (both windows) is about risk, not
-    return: high trailing volatility goes with more frequent large falls.
-    This reports the development-window rate for the company's group -- a
-    base rate, not a forecast.
+    By the company's daily range where that can be placed -- its fifth
+    among the screen's members at the last run, with the rate measured for
+    that fifth over 2006-2025 (indicators/, Phase 18): of 200 indicators the
+    daily range separated the companies that fell best, and better than
+    trailing volatility. Otherwise by trailing volatility, as the backtest
+    still does. Either way a base rate, not a forecast.
     """
+    spread = ((val or {}).get("risk") or {}).get("range")
+    table = _risk_table()
+    if spread is not None and cuts and table:
+        q = range_quintile(spread, cuts)
+        cell = table["cells"]["q%d" % q]
+        word, tone = RISK_WORDS[q]
+        windows = " / ".join("%%%.1f" % (cell["windows"][w] * 100)
+                             for w in sorted(cell["windows"]))
+        return {"key": "fall_risk", "name": "12 ayda %25+ düşüş riski",
+                "value": cell["fall_25"], "universe_rate": table["universe_rate"],
+                "group": "q%d" % q, "state": word, "tone": tone,
+                "measure": {"label": "Günlük aralık", "value": spread,
+                            "note": "taramada %s" % RISK_PLACE[q]},
+                "short": "günlük fiyat aralığı %%%.1f, taramada %s"
+                         % (spread * 100, RISK_PLACE[q]),
+                "reading": ("Son %d günün ortalama günlük aralığı fiyatın %%%.1f kadarı (%s "
+                            "itibarıyla): taramadaki şirketler arasında %s."
+                            % (table["smooth_days"], spread * 100, val["risk"]["through"],
+                               RISK_PLACE[q])),
+                "evidence": ("Backtest (S&P 500, %s, sonradan batan ve satın alınan "
+                             "şirketler dahil): her çeyrek sonunda günlük aralığa göre bu "
+                             "dilimde olan şirketlerde sonraki 12 ayda %%25'ten fazla düşüş "
+                             "oranı %%%.1f oldu; tüm evrende %%%.1f, n=%d. Üç dönemde %s. Dilim, "
+                             "şirketin o günkü üyeler arasındaki sırasıdır. Bir taban "
+                             "oranıdır, bu şirket için tahmin değildir."
+                             % (table["period"], cell["fall_25"] * 100,
+                                table["universe_rate"] * 100, cell["n"], windows))}
+    return _volatility_read(val)
+
+
+def _volatility_read(val):
+    """The fall-risk read from trailing volatility: one line at 35%."""
     vol = ((val or {}).get("volatility") or {}).get("annualized")
     summary = _summary() or {}
     table = summary.get("crash_table")
@@ -242,7 +326,12 @@ def fall_risk(val):
                      "evrenden sık düştü (1.4 kat)."),
     }[key]
     return {"key": "fall_risk", "name": "12 ayda %25+ düşüş riski", "value": rate,
+            "universe_rate": base, "group": key,
             "state": state, "tone": tone,
+            "measure": {"label": "Yıllık oynaklık", "value": vol,
+                        "note": "%%35 eşiğinin %s" % ("üstünde" if key == "high_vol"
+                                                      else "altında")},
+            "short": "son bir yılın oynaklığı %%%.0f" % (vol * 100),
             "reading": ("Son 12 ayın yıllık oynaklığı %%%.0f (%s itibarıyla)."
                         % (vol * 100, val["volatility"]["through"])),
             "evidence": ("Backtest'te (S&P 500, 2013-2019) bu gruptaki "
@@ -305,6 +394,23 @@ def measured_signals(pkg):
 
 # A pillar score is 0-100. These are the boundaries the verdict reads.
 PASS, WEAK = 60, 40
+# A valuation score moves with the price every day, and a company sitting on
+# a line would change label with it. Once the price pillar has passed it
+# keeps passing down to PASS - MARGIN, and once weak stays weak up to
+# WEAK + MARGIN; a first reading has no margin either way.
+MARGIN = 5
+
+
+def price_band(score, prior=None):
+    """"pass", "weak" or "mid" for a valuation score, given the band the
+    company held at its previous reading; None when there is no score."""
+    if score is None:
+        return None
+    if score >= PASS or (prior == "pass" and score >= PASS - MARGIN):
+        return "pass"
+    if score < WEAK or (prior == "weak" and score < WEAK + MARGIN):
+        return "weak"
+    return "mid"
 STALE_DAYS = 200     # latest usable period this far behind the latest balance sheet
 
 # Component weights are set from how reliable each measure is known to be --
@@ -811,8 +917,32 @@ def _money(v):
     return "%.1f Mr$" % (v / 1e9) if abs(v) >= 1e9 else "%.0f M$" % (v / 1e6)
 
 
-def assess(pkg, val=None):
-    """The full verdict."""
+RISK_MARGIN = 0.05
+# What the risk fifths are fifths of. A run made with another measure is no
+# previous reading for this one: its cut points and its "was in the top
+# fifth" do not carry over.
+RISK_MEASURE = "atr14/close, 60-day mean"
+
+
+def top_risk(read, cuts, was_top):
+    """Is the company in the top fifth of the day by daily range? Once
+    there it stays until its range is RISK_MARGIN under the line, so a
+    company sitting on the line does not change label from week to week."""
+    if not read or not cuts or not read["group"].startswith("q"):
+        return False
+    if read["group"] == "q5":
+        return True
+    return bool(was_top) and read["measure"]["value"] >= cuts[-1] * (1 - RISK_MARGIN)
+
+
+def assess(pkg, val=None, prior=None, risk_cuts=None):
+    """The full verdict. `prior` is the company's previous reading (the last
+    screen run, or the quarter before in the backtest): {"band", "risk_top"},
+    which the margins on the valuation band and the risk line read; without
+    it neither has a margin. `risk_cuts` are the last run's daily-range
+    fifths, which place the company for the risk read; without them it is
+    read from trailing volatility and the verdict does not use it."""
+    prior = prior or {}
     pillars = [quality(pkg, val), safety(pkg, val),
                earnings_quality(pkg), valuation(pkg, val)]
     by_name = {p["name"]: p for p in pillars}
@@ -832,15 +962,19 @@ def assess(pkg, val=None):
         capping = [v for k, v in scored.items() if k != "Kâr kalitesi"] or list(scored.values())
         business_score = round(min(weighted, min(capping) + 20), 1)
     price_pillar = by_name["Değerleme"]
+    band = price_band(price_pillar["score"], prior.get("band"))
+    risk = fall_risk(val, risk_cuts)
+    risk_top = top_risk(risk, risk_cuts, prior.get("risk_top"))
 
-    label, rationale = _decide(pkg, business, business_score, price_pillar)
+    label, rationale = _decide(pkg, business, business_score, price_pillar, val, band,
+                               risk if risk_top else None)
 
     # The verdict never travels without the caveats: the same accrual signal
     # that fails a pillar usually has a benign reading, and showing one
     # without the other is how a tool like this misleads.
     flags = interpret.red_flags(pkg)
     signals = measured_signals(pkg) + [
-        s for s in [fair_value_read(val), fall_risk(val), issuance_read(val)] if s]
+        s for s in [fair_value_read(val), risk, issuance_read(val)] if s]
 
     return {
         "verdict": label,
@@ -848,6 +982,8 @@ def assess(pkg, val=None):
         "rationale": rationale,
         "caveats": flags,
         "business_score": business_score,
+        "price_band": band,
+        "risk_top": risk_top,
         "pillars": pillars,
         "measured_signals": signals,
         "next_quarter": next_quarter(pkg),
@@ -930,9 +1066,7 @@ def plain_summary(pkg, val, label, business_score, signals):
                        % pick["span"])
     risk = by_key.get("fall_risk")
     if risk:
-        out.append("Büyük düşüş riski %s: son bir yılın oynaklığı %s."
-                   % (risk["state"], risk["reading"].split("oynaklığı ")[-1]
-                      .split(" (")[0]))
+        out.append("Büyük düşüş riski %s: %s." % (risk["state"], risk["short"]))
     out.append("Sonuç: %s." % VERDICT_WORDS.get(label, label))
     return out
 
@@ -966,7 +1100,7 @@ def by_name_reasons(pillars, name):
     return []
 
 
-def _decide(pkg, business, business_score, price):
+def _decide(pkg, business, business_score, price, val=None, band=None, top_risk_read=None):
     """The decision rule, written out rather than averaged into a number."""
     failing = [p["name"] for p in business
                if p["score"] is not None and p["score"] < WEAK]
@@ -1006,7 +1140,31 @@ def _decide(pkg, business, business_score, price):
         eq_note = ("Uyarı: kâr kalitesi zayıf; raporlanan kârın nakde dönüşü "
                    "sınırlı.")
 
-    label, rationale = _decide_rest(pkg, business, business_score, price, failing)
+    label, rationale = _decide_rest(pkg, business, business_score, price, failing, band)
+    # The valuation pillar weighs three reads; the headline fair value is one
+    # of them. When the pillar passes but the price stands above that fair
+    # value by more than the band shown as "pahali", the two disagree, and a
+    # label saying investable beside a number saying expensive would
+    # contradict itself on the same screen.
+    upside = (val or {}).get("upside_to_fair")
+    if (label == "yatirim yapilabilir" and upside is not None
+            and upside < -NEAR_FAIR):
+        label = "kosullu"
+        rationale = ("İşletme %.0f/100 ve değerleme puanı %.0f/100 olumlu, "
+                     "ama adil değer tahmini fiyatın %%%.0f altında. İki "
+                     "değerleme okuması çelişirken yatırım yapılabilir denmedi."
+                     % (business_score, price["score"], -upside * 100))
+    # The same reasoning for risk: the fall-risk read is the one thing here
+    # measured to hold in every window, and a company in the top fifth of
+    # the day by it cannot be called investable on the screen that says so.
+    if label == "yatirim yapilabilir" and top_risk_read:
+        label = "kosullu"
+        rationale = ("İşletme %.0f/100 ve değerleme %.0f/100 olumlu, ama düşüş riski en "
+                     "yüksek grupta: %s. Bu gruptaki şirketlerde bir yılda %%25'ten fazla "
+                     "düşüş oranı %%%.0f, tüm evrende %%%.0f. Bu riskle yatırım yapılabilir "
+                     "denmedi."
+                     % (business_score, price["score"], top_risk_read["short"],
+                        top_risk_read["value"] * 100, top_risk_read["universe_rate"] * 100))
     if eq_note:
         if label == "yatirim yapilabilir":
             label = "kosullu"
@@ -1017,7 +1175,7 @@ def _decide(pkg, business, business_score, price):
     return label, rationale
 
 
-def _decide_rest(pkg, business, business_score, price, failing):
+def _decide_rest(pkg, business, business_score, price, failing, band):
     if "Güvenlik" in failing:
         return "yatirim yapilamaz", ("Bilanço güvenliği eşiğin altında. "
                                      "Finansman baskısı altındaki bir şirkette "
@@ -1042,25 +1200,35 @@ def _decide_rest(pkg, business, business_score, price, failing):
     if price["score"] is None:
         return "fiyat verisi yok", "İşletme değerlendirildi, fiyat alınamadı."
 
-    if business_score >= PASS and price["score"] >= PASS:
+    # Where the margin, not the line, decides, the rationale says so: a
+    # score of 57 called passing reads as an error otherwise.
+    held = ""
+    if band == "pass" and price["score"] < PASS:
+        held = (" Değerleme %d çizgisinin altında ama %d'in üstünde: önceki "
+                "olumlu okuma korunuyor." % (PASS, PASS - MARGIN))
+    elif band == "weak" and price["score"] >= WEAK:
+        held = (" Değerleme %d çizgisinin üstünde ama %d'in altında: önceki "
+                "pahalı okuma korunuyor." % (WEAK, WEAK + MARGIN))
+
+    if business_score >= PASS and band == "pass":
         return "yatirim yapilabilir", ("İşletme kalitesi ve fiyat birlikte "
                                        "olumlu: işletme %.0f/100, değerleme "
-                                       "%.0f/100."
-                                       % (business_score, price["score"]))
-    if business_score >= PASS and price["score"] < WEAK:
+                                       "%.0f/100.%s"
+                                       % (business_score, price["score"], held))
+    if business_score >= PASS and band == "weak":
         why = ("fiyat, özsermaye kârlılığının haklı çıkardığı defter değeri "
                "çarpanının üzerinde"
                if pkg["company"]["sector_bucket"] == "financial" else
                "fiyat şirketin geçmişte teslim etmediği bir büyümeyi ima ediyor")
         return "iyi sirket, pahali fiyat", ("İşletme %.0f/100 ile güçlü ama "
-                                            "değerleme %.0f/100 -- %s."
-                                            % (business_score, price["score"], why))
-    if business_score < PASS and price["score"] >= PASS:
+                                            "değerleme %.0f/100 -- %s.%s"
+                                            % (business_score, price["score"], why, held))
+    if business_score < PASS and band == "pass":
         return "ucuz ama sorunlu", ("Fiyat %.0f/100 ile cazip, işletme "
                                     "%.0f/100 -- indirim bir sebeple var. "
                                     "Tez, sorunun geçici olduğuna dayanmak "
-                                    "zorunda."
-                                    % (price["score"], business_score))
+                                    "zorunda.%s"
+                                    % (price["score"], business_score, held))
     return "kosullu", ("Ne işletme ne fiyat tarafı net: işletme %.0f/100, "
                        "değerleme %.0f/100." % (business_score, price["score"]))
 

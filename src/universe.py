@@ -15,7 +15,7 @@ import json
 import os
 import time
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 
 import edgar
@@ -42,6 +42,64 @@ def _download(url, path):
 def yahoo_symbol(ticker):
     """BRK.B in the membership file is BRK-B on Yahoo and in the SEC map."""
     return ticker.replace(".", "-")
+
+
+# Where the membership ticker and Yahoo's symbol are not the same company.
+# A ticker Yahoo no longer knows is found by survivorship.py through its CIK;
+# these are the ones it cannot see, because Yahoo does answer for the ticker
+# -- with the later owner of the symbol, or with the acquirer's history.
+# (membership ticker, last membership day the entry covers or None for all,
+#  symbol holding that company's history or None when no free series does)
+# Each was confirmed against an outside price history (crosscheck.py).
+PLACEMENTS = [
+    # Renamed; the history lives under the new symbol.
+    ("ARNC", None, "HWM"),    # Alcoa Inc -> Arconic 2016 -> Howmet 2020
+    ("BBT", None, "TFC"),     # BB&T -> Truist 2019
+    ("CTL", None, "LUMN"),    # CenturyLink -> Lumen 2020
+    ("DWDP", None, "DD"),     # DowDuPont -> DuPont de Nemours 2019
+    ("FB", None, "META"),     # Facebook -> Meta 2022
+    ("GPS", None, "GAP"),     # Gap, ticker change 2024
+    ("HCP", None, "DOC"),     # HCP -> Healthpeak 2019, ticker DOC 2024
+    ("HFC", None, "DINO"),    # HollyFrontier -> HF Sinclair 2022
+    ("IR", "2020-03-02", "TT"),   # Ingersoll-Rand plc -> Trane Technologies; IR since is Gardner Denver's successor
+    ("JEC", None, "J"),       # Jacobs, ticker change 2019
+    ("KORS", None, "CPRI"),   # Michael Kors -> Capri 2019
+    ("LB", None, "BBWI"),     # L Brands -> Bath & Body Works 2021
+    ("PX", None, "LIN"),      # Praxair -> Linde plc 2018
+    ("SYMC", None, "GEN"),    # Symantec -> NortonLifeLock 2019 -> Gen 2022
+    # Gone; the symbol now answers with another company.
+    ("CB", "2016-01-19", None),   # Chubb Corp, acquired by ACE; CB is ACE's history
+    ("CCU", None, None),          # Clear Channel, taken private 2008
+    ("CPWR", None, None),         # Compuware, taken private 2014
+    ("DD", "2017-09-01", None),   # E.I. du Pont, merged into DowDuPont
+    ("EP", None, None),           # El Paso, acquired by Kinder Morgan 2012
+    ("GENZ", None, None),         # Genzyme, acquired by Sanofi 2011
+    ("GR", None, None),           # Goodrich, acquired by United Technologies 2012
+    ("JCI", "2016-09-06", None),  # Johnson Controls Inc, merged into Tyco; JCI is Tyco's history
+    ("KG", None, None),           # King Pharmaceuticals, acquired by Pfizer 2011
+    ("PARA", None, None),         # Paramount Global, merged into Paramount Skydance 2025
+    ("PLD", "2011-06-03", None),  # ProLogis, merged into AMB Property; PLD is AMB's history
+    ("TT", "2008-06-06", None),   # Trane Inc, acquired by Ingersoll-Rand; TT is Ingersoll-Rand's history
+    ("WEN", None, None),          # Wendy's International, merged into Triarc 2008
+]
+
+
+def placements(ticker, intervals):
+    """[(Yahoo symbol or None, intervals)] for one membership ticker: where
+    each stretch of its membership can be priced. None means no free series
+    is that company's, so the stretch is left out rather than priced on a
+    stranger."""
+    rules = [(until, symbol) for t, until, symbol in PLACEMENTS if t == ticker]
+    own = yahoo_symbol(ticker)
+    if not rules:
+        return [(own, list(intervals))]
+    until, symbol = rules[0]
+    if until is None:
+        return [(symbol, list(intervals))]
+    after = (datetime.fromisoformat(until) + timedelta(days=1)).date().isoformat()
+    early = [(s, min(e or until, until)) for s, e in intervals if s <= until]
+    late = [(max(s, after), e) for s, e in intervals if e is None or e > until]
+    return [(symbol, early), (own, late)]
 
 
 def membership(refresh=False):
@@ -228,22 +286,72 @@ def resolve(ticker, wiki):
         return None
 
 
-def backtest_universe(start="2013-01-01", end="2025-12-31"):
+ALIASES = os.path.join(os.path.dirname(__file__), "..", "data", "survivorship",
+                       "aliases.json")
+OUTSIDE = os.path.join(DATA, "outside.json")
+
+
+def backtest_universe(start="2013-01-01", end="2025-12-31", outside=True):
     """Members at any point in [start, end], resolved to CIKs.
 
-    Returns ({ticker: {"cik", "intervals"}}, unresolved tickers).
+    Returns ({key: {"cik", "intervals", "ticker", "symbol"}}, unresolved
+    tickers). `symbol` is where the company's prices are read. A member
+    that only changed ticker is read under the symbol holding its history
+    (survivorship.py's aliases, PLACEMENTS) and joins that symbol's record,
+    so one company is one record however often it was renamed; a stretch
+    whose symbol is another company is left out. With `outside`, members
+    Yahoo no longer serves come from outside_prices.py's file when it
+    exists, marked as such.
     """
     members = membership()
     wiki = wikipedia_ciks()
-    out, unresolved = {}, []
+    aliases = json.load(open(ALIASES)) if os.path.exists(ALIASES) else {}
+    extra = json.load(open(OUTSIDE)) if outside and os.path.exists(OUTSIDE) else {}
+    in_window = lambda spans: [(s, e) for s, e in spans
+                               if s <= end and (e is None or e >= start)]
+    out, by_symbol, moved, placed = {}, {}, [], set()
     for ticker, intervals in sorted(members.items()):
-        if not any(s <= end and (e is None or e >= start) for s, e in intervals):
+        if not in_window(intervals):
             continue
-        cik = resolve(ticker, wiki)
+        for symbol, part in placements(ticker, intervals):
+            if not in_window(part):
+                continue
+            placed.add(ticker)      # a stretch left out on purpose is not "unresolved"
+            if symbol is None:
+                continue
+            symbol = aliases.get(symbol, symbol)
+            if symbol != yahoo_symbol(ticker):
+                moved.append((ticker, symbol, part))
+                continue
+            cik = resolve(ticker, wiki)
+            if cik is None:
+                placed.discard(ticker)
+                continue
+            out[ticker] = by_symbol[symbol] = {"cik": cik, "intervals": list(part),
+                                               "ticker": ticker, "symbol": symbol}
+    resolved = set(out)
+    for ticker, symbol, part in moved:
+        if symbol in by_symbol:
+            by_symbol[symbol]["intervals"].extend(part)
+            resolved.add(ticker)
+            continue
+        cik = resolve(symbol, wiki)
         if cik is None:
-            unresolved.append(ticker)
+            placed.discard(ticker)
             continue
-        out[ticker] = {"cik": cik, "intervals": intervals}
+        out[symbol] = by_symbol[symbol] = {"cik": cik, "intervals": list(part),
+                                           "ticker": symbol, "symbol": symbol}
+        resolved.add(ticker)
+    unresolved = []
+    for ticker, intervals in sorted(members.items()):
+        if not in_window(intervals) or ticker in resolved or ticker in placed:
+            continue
+        if ticker in extra:
+            out[ticker] = {"cik": extra[ticker]["cik"], "intervals": list(intervals),
+                           "ticker": ticker, "symbol": extra[ticker]["symbol"],
+                           "outside": True}
+        else:
+            unresolved.append(ticker)
     return out, unresolved
 
 
@@ -302,7 +410,7 @@ def prefetch(universe, price_fn, workers=6):
             return ticker, "facts: %s" % exc
         try:
             yahoo.wait()
-            price_fn(yahoo_symbol(ticker), need_raw=True)
+            price_fn(rec.get("symbol") or yahoo_symbol(ticker), need_raw=True)
         except Exception as exc:
             return ticker, "prices: %s" % exc
         return ticker, None

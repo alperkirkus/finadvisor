@@ -85,14 +85,16 @@ def members_since(start="2005-01-01", end="2025-12-31"):
     """{yahoo_symbol: intervals} for S&P 500 members at any point in the window.
 
     A member that changed ticker (ABC is now COR) is read under its current
-    ticker, the same company by CIK; see survivorship.py.
+    ticker, the same company by CIK; see survivorship.py. A stretch whose
+    symbol is another company on Yahoo is moved or left out (U.PLACEMENTS).
     """
     aliases = json.load(open(ALIASES)) if os.path.exists(ALIASES) else {}
     out = {}
     for t, iv in U.membership().items():
         if any(s <= end and (e is None or e >= start) for s, e in iv):
-            sym = U.yahoo_symbol(t)
-            out.setdefault(aliases.get(sym, sym), []).extend(iv)
+            for sym, part in U.placements(t, iv):
+                if sym is not None and part:
+                    out.setdefault(aliases.get(sym, sym), []).extend(part)
     return out
 
 
@@ -228,19 +230,32 @@ def passes_quality(rows, day):
 # Backtest
 
 
-def run():
-    members = members_since()
-    series = {}
-    for sym in list(members) + [INDEX, ETF]:
-        if os.path.exists(_path(sym)):
-            series[sym] = Series(json.load(open(_path(sym))))
+def load_series(symbols):
+    return {sym: Series(json.load(open(_path(sym))))
+            for sym in symbols if os.path.exists(_path(sym))}
+
+
+def run(members=None, series=None, quality_key=None):
+    """Monthly returns of every strategy, on the Yahoo universe by default.
+
+    `members` ({name: intervals}) and `series` ({name: Series}, the index and
+    SPY included) run the same rules on another universe; `quality_key` maps
+    its names to the verdict backtest's symbols, None for a name it never
+    scored.
+    """
+    own = members is None
+    if own:
+        members = members_since()
+        series = load_series(list(members) + [INDEX, ETF])
     spy, idx = series[ETF], series[INDEX]
     rf = tbill_monthly()
     quality = quality_rows()
     ends = month_ends(spy)
 
     strategies = ["A", "A_no_regime", "B", "EW", "EW_failures", "SPY", "SPY_regime"]
-    failed = failures()
+    # The failed-member bound stands in for companies the Yahoo universe
+    # cannot hold; a universe supplied from outside is taken as it is.
+    failed = failures() if own else {}
     spy_on = None
     rets = {s: [] for s in strategies}
     held = {s: {} for s in ("A", "A_no_regime", "B")}
@@ -293,7 +308,8 @@ def run():
         picks = {
             "A_no_regime": ranked[:TOP_N],
             "A": ranked[:TOP_N] if regime_on else [],
-            "B": ([s for s in ranked if passes_quality(quality.get(s, []), d0)][:TOP_N]
+            "B": ([s for s in ranked
+                   if passes_quality(quality.get(quality_key(s) if quality_key else s, []), d0)][:TOP_N]
                   if regime_on and d0 >= "2013-01-01" else None),
         }
         for name, names in picks.items():
